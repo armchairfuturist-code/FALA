@@ -10,7 +10,7 @@ The frontier is at `docs/agents/tickets/` — query all `.md` files where `wayfi
 | 2 | Bootstrap agent infrastructure | task | — (closed) |
 | 3 | Setup development environment | task | — (closed) |
 | 4 | Architecture documentation | research | — (closed) |
-| 5 | Testing and CI | task | — **(frontier)** |
+| 5 | Testing and CI | task | — (closed) |
 
 ## Notes
 
@@ -28,7 +28,9 @@ The frontier is at `docs/agents/tickets/` — query all `.md` files where `wayfi
 
 - [Clone and verify](tickets/001-clone-and-verify.md) — Repo cloned locally, `.venv` + deps installed, CLI verified to start; `.venv/` added to `.gitignore`; Arch requires virtualenv for pip
 - [Bootstrap agent infrastructure](tickets/002-bootstrap-agent-infrastructure.md) — AGENTS.md, CONTEXT.md, issue-tracker.md, triage-labels.md, ADR template created and committed on `chore/bootstrap` branch
+- [Setup development environment](tickets/003-setup-development-environment.md) — pyproject.toml, ruff/pytest/mypy config, .env.example, scripts/bootstrap.sh + lint.sh, all lint passes clean
 - [Architecture documentation](tickets/004-architecture-documentation.md) — docs/architecture.md with module graph, data flow, SRS algorithm, prompt templates, audio pipeline, 8 design decisions, 8 latent issues documented; README claims checked
+- [Testing and CI](tickets/005-testing-and-ci.md) — 52 tests (config, progress, conversation, fala smoke test), .github/workflows/ci.yml, fixed load_vocabulary parsing bug
 
 ## Fog
 
