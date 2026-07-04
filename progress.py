@@ -41,9 +41,17 @@ def load_vocabulary() -> list[dict]:
     for block in text.strip().split("\n- word: "):
         if not block.strip():
             continue
-        if not block.startswith('"'):
+        # The first block (before any "\n- word: " split) already starts
+        # with "- word:" — pass it through directly.
+        # Later blocks start with the word content after the split point
+        # and need the "- word: " prefix re-added.
+        if block.lstrip().startswith("- word:"):
+            entry = _parse_vocab_entry(block)
+        elif block.startswith('"'):
+            entry = _parse_vocab_entry("- word: " + block)
+        else:
             block = '"' + block
-        entry = _parse_vocab_entry("- word: " + block if block.startswith('"') else block)
+            entry = _parse_vocab_entry("- word: " + block)
         if entry:
             entries.append(entry)
     return entries

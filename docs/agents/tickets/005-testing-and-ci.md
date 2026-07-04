@@ -1,6 +1,6 @@
 ---
 type: task
-labels: [wayfinder:task, wayfinder:unclaimed]
+labels: [wayfinder:task, wayfinder:claimed]
 blocked_by: [002-bootstrap-agent-infrastructure, 003-setup-development-environment, 004-architecture-documentation]
 ---
 

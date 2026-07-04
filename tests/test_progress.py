@@ -1,0 +1,312 @@
+"""Tests for progress.py — SRS logic, vocab persistence, summary management."""
+
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_config_patches(data_dir: Path):
+    """Return a dict of config attributes to swap for testing."""
+    return {
+        "DATA_DIR": data_dir,
+        "SUMMARY_PATH": data_dir / "summary.md",
+        "VOCABULARY_PATH": data_dir / "vocabulary.md",
+        "RECORDS_DIR": data_dir / "records",
+        "GUARDRAILS": {
+            "max_new_words_per_session": 5,
+            "min_review_words_per_warmup": 3,
+            "present_tense_confidence_threshold": 0.7,
+        },
+    }
+
+
+def _apply_patches(patches):
+    """Swap config module attributes with test values."""
+    import config
+
+    for key, val in patches.items():
+        setattr(config, key, val)
+
+
+def _reload_progress():
+    """Reload progress so it picks up patched config values."""
+    import importlib
+
+    import progress
+
+    importlib.reload(progress)
+    return progress
+
+
+# ---------------------------------------------------------------------------
+# Vocabulary: add_vocabulary
+# ---------------------------------------------------------------------------
+
+
+class TestAddVocabulary:
+    def test_add_new_word(self):
+        p = _reload_progress()
+        entries = []
+        entries = p.add_vocabulary(entries, "olá", "hello", "Olá, tudo bem?")
+        assert len(entries) == 1
+        assert entries[0]["word"] == "olá"
+        assert entries[0]["english"] == "hello"
+        assert entries[0]["confidence"] == 0.3
+        assert entries[0]["needs_review"] is True
+
+    def test_duplicate_word_skipped(self):
+        p = _reload_progress()
+        entries = [
+            {
+                "word": "olá",
+                "english": "hello",
+                "ease": 2.5,
+                "interval": 1,
+                "last_reviewed": "2026-01-01",
+                "confidence": 0.5,
+                "needs_review": False,
+            }
+        ]
+        entries = p.add_vocabulary(entries, "olá", "hello")
+        assert len(entries) == 1
+
+    def test_multiple_words(self):
+        p = _reload_progress()
+        entries = []
+        for word, eng in [("sim", "yes"), ("não", "no"), ("obrigado", "thank you")]:
+            entries = p.add_vocabulary(entries, word, eng)
+        assert len(entries) == 3
+
+
+# ---------------------------------------------------------------------------
+# Vocabulary: update_vocab_after_review
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateVocabAfterReview:
+    def _make_entry(self, word="teste", confidence=0.5, ease=2.5, interval=1, needs_review=True):
+        return {
+            "word": word,
+            "english": "test",
+            "context": "",
+            "ease": ease,
+            "interval": interval,
+            "last_reviewed": "2026-01-01",
+            "confidence": confidence,
+            "needs_review": needs_review,
+        }
+
+    def test_correct_answer_increases_confidence(self):
+        p = _reload_progress()
+        entries = [self._make_entry(confidence=0.5)]
+        entries = p.update_vocab_after_review(entries, "teste", correct=True)
+        assert entries[0]["confidence"] == 0.65  # 0.5 + 0.15
+        assert entries[0]["interval"] > 1
+
+    def test_correct_answer_caps_confidence(self):
+        p = _reload_progress()
+        entries = [self._make_entry(confidence=0.95)]
+        entries = p.update_vocab_after_review(entries, "teste", correct=True)
+        assert entries[0]["confidence"] == 1.0
+
+    def test_incorrect_answer_resets(self):
+        p = _reload_progress()
+        entries = [self._make_entry(confidence=0.7, interval=10, ease=2.5)]
+        entries = p.update_vocab_after_review(entries, "teste", correct=False)
+        assert entries[0]["confidence"] == pytest.approx(0.5, rel=1e-6)
+        assert entries[0]["interval"] == 1
+        assert entries[0]["needs_review"] is True
+
+    def test_high_confidence_clears_review_flag(self):
+        p = _reload_progress()
+        entries = [self._make_entry(confidence=0.7)]
+        entries = p.update_vocab_after_review(entries, "teste", correct=True)
+        assert entries[0]["confidence"] == 0.85
+        assert entries[0]["needs_review"] is False
+
+    def test_unknown_word_no_op(self):
+        p = _reload_progress()
+        entries = [self._make_entry(word="a")]
+        entries = p.update_vocab_after_review(entries, "nonexistent", correct=True)
+        assert len(entries) == 1
+        assert entries[0]["word"] == "a"
+
+
+# ---------------------------------------------------------------------------
+# Vocabulary: get_review_words
+# ---------------------------------------------------------------------------
+
+
+class TestGetReviewWords:
+    def _make_entry(self, word, confidence=0.5, interval=1, last_reviewed=None, needs_review=False):
+        if last_reviewed is None:
+            last_reviewed = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        return {
+            "word": word,
+            "english": "",
+            "context": "",
+            "ease": 2.5,
+            "interval": interval,
+            "last_reviewed": last_reviewed,
+            "confidence": confidence,
+            "needs_review": needs_review,
+        }
+
+    def test_returns_due_words(self):
+        p = _reload_progress()
+        entries = [
+            self._make_entry("due1", interval=1),  # 7 days ago + 1 day interval = due
+            self._make_entry("due2", interval=30),  # 7 days ago + 30 day interval = not due
+        ]
+        due = p.get_review_words(entries, count=5)
+        words = [e["word"] for e in due]
+        assert "due1" in words
+        assert "due2" not in words
+
+    def test_needs_review_always_included(self):
+        p = _reload_progress()
+        entries = [
+            self._make_entry("always", interval=100, needs_review=True),
+        ]
+        due = p.get_review_words(entries, count=5)
+        assert any(e["word"] == "always" for e in due)
+
+    def test_respects_count(self):
+        p = _reload_progress()
+        entries = [self._make_entry(f"word{i}", interval=1) for i in range(10)]
+        due = p.get_review_words(entries, count=3)
+        assert len(due) == 3
+
+    def test_sorts_by_confidence_ascending(self):
+        p = _reload_progress()
+        entries = [
+            self._make_entry("high", confidence=0.9, interval=1),
+            self._make_entry("low", confidence=0.2, interval=1),
+            self._make_entry("mid", confidence=0.5, interval=1),
+        ]
+        due = p.get_review_words(entries, count=3)
+        confs = [e["confidence"] for e in due]
+        assert confs == sorted(confs)
+
+    def test_empty_list_returns_empty(self):
+        p = _reload_progress()
+        assert p.get_review_words([], count=5) == []
+
+
+# ---------------------------------------------------------------------------
+# Vocabulary: save / load round-trip
+# ---------------------------------------------------------------------------
+
+
+class TestVocabPersistence:
+    def test_write_then_read(self, tmp_path):
+        from config import VOCABULARY_PATH
+
+        # Patch paths
+        old_path = VOCABULARY_PATH
+        test_path = tmp_path / "vocabulary.md"
+
+        import config
+
+        config.VOCABULARY_PATH = test_path
+        p = _reload_progress()
+
+        entries = []
+        entries = p.add_vocabulary(entries, "bom", "good")
+        entries = p.add_vocabulary(entries, "mau", "bad")
+        p.save_vocabulary(entries)
+
+        loaded = p.load_vocabulary()
+        assert len(loaded) == 2
+        assert loaded[0]["word"] == "bom"
+        assert loaded[1]["word"] == "mau"
+
+        # Restore
+        config.VOCABULARY_PATH = old_path
+
+    def test_load_nonexistent_returns_empty(self, tmp_path):
+        import config
+
+        old = config.VOCABULARY_PATH
+        config.VOCABULARY_PATH = tmp_path / "nonexistent.md"
+        p = _reload_progress()
+        assert p.load_vocabulary() == []
+        config.VOCABULARY_PATH = old
+
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+
+
+class TestSummary:
+    def test_default_summary(self, tmp_path):
+        import config
+
+        old = config.SUMMARY_PATH
+        config.SUMMARY_PATH = tmp_path / "summary.md"
+        p = _reload_progress()
+        summary = p.load_summary()
+        assert "Current level: A1" in summary
+        assert "Sessions completed: 0" in summary
+        config.SUMMARY_PATH = old
+
+    def test_save_and_load_summary(self, tmp_path):
+        import config
+
+        test_path = tmp_path / "summary.md"
+        old = config.SUMMARY_PATH
+        config.SUMMARY_PATH = test_path
+        p = _reload_progress()
+
+        text = "# Learner Profile\n- Current level: A2\n- Sessions completed: 5"
+        p.save_summary(text)
+        loaded = p.load_summary()
+        assert "A2" in loaded
+        assert "5" in loaded
+
+        config.SUMMARY_PATH = old
+
+
+# ---------------------------------------------------------------------------
+# get_vocab_for_prompt
+# ---------------------------------------------------------------------------
+
+
+class TestGetVocabForPrompt:
+    def _make_entry(self, word, confidence=0.5, interval=1, **kw):
+        return {
+            "word": word,
+            "english": "?",
+            "context": "",
+            "ease": 2.5,
+            "interval": interval,
+            "last_reviewed": "2026-01-01",
+            "confidence": confidence,
+            "needs_review": True,
+            **kw,
+        }
+
+    def test_returns_formatted_string(self):
+        p = _reload_progress()
+        entries = [self._make_entry("obrigado", confidence=0.7)]
+        result = p.get_vocab_for_prompt(entries)
+        assert "obrigado" in result
+        assert "70%" in result or "70 %" in result
+
+    def test_empty_returns_placeholder(self):
+        p = _reload_progress()
+        result = p.get_vocab_for_prompt([])
+        assert "no vocabulary yet" in result
+
+    def test_respects_count(self):
+        p = _reload_progress()
+        entries = [self._make_entry(f"word{i}") for i in range(20)]
+        result = p.get_vocab_for_prompt(entries, count=5)
+        lines = [ln for ln in result.split("\n") if ln.strip().startswith("-")]
+        assert len(lines) <= 5

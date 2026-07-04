@@ -89,3 +89,4 @@ scripts/lint.sh
 - Architecture decisions in `docs/adr/`
 - This project uses the `setup-matt-pocock-skills` pattern: canonical issue labels, GitHub Issues as tracker, CONTEXT.md + ADRs for domain docs
 - Use `.venv` for all Python environments (system Python is externally managed on Arch)
+- Output style: see `~/.claude/CLAUDE.md` § Maximum Terseness — zero preamble, fragments over sentences. Both agents (MiMo Code, OMP) enforce identical rules.
