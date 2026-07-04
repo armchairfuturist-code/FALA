@@ -8,9 +8,9 @@ The frontier is at `docs/agents/tickets/` — query all `.md` files where `wayfi
 |---|------|------|------------|
 | 1 | Clone and verify | task | — (closed) |
 | 2 | Bootstrap agent infrastructure | task | — (closed) |
-| 3 | Setup development environment | task | — **(frontier)** |
-| 4 | Architecture documentation | research | #3 |
-| 5 | Testing and CI | task | #3, #4 |
+| 3 | Setup development environment | task | — (closed) |
+| 4 | Architecture documentation | research | — (closed) |
+| 5 | Testing and CI | task | — **(frontier)** |
 
 ## Notes
 
@@ -26,13 +26,15 @@ The frontier is at `docs/agents/tickets/` — query all `.md` files where `wayfi
 
 <!-- one line per closed ticket: name (linked) + gist of the answer -->
 
+- [Clone and verify](tickets/001-clone-and-verify.md) — Repo cloned locally, `.venv` + deps installed, CLI verified to start; `.venv/` added to `.gitignore`; Arch requires virtualenv for pip
 - [Bootstrap agent infrastructure](tickets/002-bootstrap-agent-infrastructure.md) — AGENTS.md, CONTEXT.md, issue-tracker.md, triage-labels.md, ADR template created and committed on `chore/bootstrap` branch
+- [Architecture documentation](tickets/004-architecture-documentation.md) — docs/architecture.md with module graph, data flow, SRS algorithm, prompt templates, audio pipeline, 8 design decisions, 8 latent issues documented; README claims checked
 
 ## Fog
 
 - **Feature roadmap** — what to build after infrastructure is solid? New modes? Web/mobile port? Pronunciation analyzer? Can't sharpen until the codebase is understood.
 - **TTS/STT quality** — current OpenAI TTS voices are English-optimised; pt-PT voices are scarce. Worth investigating alternatives (ElevenLabs, local models) when the audio module gets attention.
-- **SRS parameter tuning** — SM-2 constants (ease floor, interval caps) are hardcoded; may need calibration against real usage data.
+- **SRS broken** — `update_vocab_after_review()` and `save_learning_record()` exist but are never called. Words are added at confidence=0.3 but never graduate. Needs a dedicated fix ticket.
 - **Conversation UX** — the warmup→free-conversation flow works, but session quality depends entirely on the LLM prompt. Long-term improvements likely need prompt versioning and A/B evaluation.
 - **Multi-user / persistence** — currently single-user file-based. Multi-user or cloud sync is a known direction but too vague to ticket.
 - **Evaluation** — how to measure learning progress objectively? LLM summary is subjective. A structured assessment mode is a candidate feature.
