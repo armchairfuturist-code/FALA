@@ -1,0 +1,8 @@
+# Runtime dependencies
+openai>=1.0.0
+rich>=13.0.0
+
+# Development dependencies
+pytest>=9.0.0
+ruff>=0.15.0
+mypy>=2.0.0

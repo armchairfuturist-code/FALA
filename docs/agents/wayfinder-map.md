@@ -7,10 +7,10 @@ The frontier is at `docs/agents/tickets/` — query all `.md` files where `wayfi
 | # | Name | Type | Blocked by |
 |---|------|------|------------|
 | 1 | Clone and verify | task | — (closed) |
-| 2 | Bootstrap agent infrastructure | task | — **(frontier)** |
+| 2 | Bootstrap agent infrastructure | task | — (closed) |
 | 3 | Setup development environment | task | — **(frontier)** |
-| 4 | Architecture documentation | research | #2, #3 |
-| 5 | Testing and CI | task | #2–#4 |
+| 4 | Architecture documentation | research | #3 |
+| 5 | Testing and CI | task | #3, #4 |
 
 ## Notes
 
@@ -26,7 +26,7 @@ The frontier is at `docs/agents/tickets/` — query all `.md` files where `wayfi
 
 <!-- one line per closed ticket: name (linked) + gist of the answer -->
 
-- [Clone and verify](tickets/001-clone-and-verify.md) — Repo cloned locally, `.venv` + deps installed, CLI verified to start; `.venv/` added to `.gitignore`; Arch requires virtualenv for pip
+- [Bootstrap agent infrastructure](tickets/002-bootstrap-agent-infrastructure.md) — AGENTS.md, CONTEXT.md, issue-tracker.md, triage-labels.md, ADR template created and committed on `chore/bootstrap` branch
 
 ## Fog
 

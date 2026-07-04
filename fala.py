@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """fala — European Portuguese language tutor CLI."""
 
-import sys
-from datetime import datetime
-
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
@@ -13,7 +10,8 @@ from conversation import ConversationEngine
 console = Console()
 
 try:
-    from audio import speak, listen
+    from audio import listen, speak
+
     AUDIO_AVAILABLE = True
 except ImportError:
     AUDIO_AVAILABLE = False
@@ -24,10 +22,12 @@ def main():
     voice_mode = False
 
     console.print()
-    console.print(Panel.fit(
-        "[bold cyan]fala[/bold cyan] — European Portuguese Tutor",
-        subtitle="A1→B1 | Type 'quit' to exit | /voice to toggle voice input",
-    ))
+    console.print(
+        Panel.fit(
+            "[bold cyan]fala[/bold cyan] — European Portuguese Tutor",
+            subtitle="A1→B1 | Type 'quit' to exit | /voice to toggle voice input",
+        )
+    )
     console.print()
 
     status = engine.get_status_report()
@@ -54,7 +54,9 @@ def main():
                     console.print(f"[dim]heard: {voice_text}[/dim]")
                     user_input = voice_text
                 else:
-                    user_input = Prompt.ask("[bold green]you[/bold green] [dim](voice failed, type instead)[/dim]")
+                    prompt = "[bold green]you[/bold green] "
+                    prompt += "[dim](voice failed, type instead)[/dim]"
+                    user_input = Prompt.ask(prompt)
             else:
                 user_input = Prompt.ask("[bold green]you[/bold green]")
         except (EOFError, KeyboardInterrupt):

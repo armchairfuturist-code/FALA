@@ -1,9 +1,10 @@
 import subprocess
 import tempfile
 from pathlib import Path
-from openai import OpenAI
-from config import LLM_API_KEY, LLM_BASE_URL, TTS_PROVIDER, TTS_VOICE, STT_MODEL
 
+from openai import OpenAI
+
+from config import LLM_API_KEY, LLM_BASE_URL, STT_MODEL, TTS_VOICE
 
 _client = None
 
@@ -60,6 +61,7 @@ def speak(text: str) -> bool:
 def speech_to_text(audio_path: Path) -> str | None:
     try:
         import whisper
+
         model = whisper.load_model(STT_MODEL)
         result = model.transcribe(str(audio_path), language="pt")
         return result.get("text", "").strip()

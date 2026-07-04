@@ -1,15 +1,23 @@
 import json
 from datetime import datetime
-from pathlib import Path
+
 from openai import OpenAI
+
 from config import (
-    LLM_MODEL, LLM_BASE_URL, LLM_API_KEY,
-    PROMPTS_DIR, GUARDRAILS, SESSIONS_DIR,
+    LLM_API_KEY,
+    LLM_BASE_URL,
+    LLM_MODEL,
+    PROMPTS_DIR,
+    SESSIONS_DIR,
 )
 from progress import (
-    load_summary, save_summary, load_vocabulary, save_vocabulary,
-    get_review_words, update_vocab_after_review, add_vocabulary,
-    get_vocab_for_prompt, save_learning_record,
+    add_vocabulary,
+    get_review_words,
+    get_vocab_for_prompt,
+    load_summary,
+    load_vocabulary,
+    save_summary,
+    save_vocabulary,
 )
 
 
@@ -97,11 +105,16 @@ class ConversationEngine:
 
     def _extract_vocab_from_exchange(self, user_msg: str, assistant_msg: str):
         extract_prompt = [
-            {"role": "system", "content": (
-                "Extract any new Portuguese vocabulary words introduced in this exchange. "
-                "Return JSON array: [{\"word\": \"...\", \"english\": \"...\", \"context\": \"...\"}]. "
-                "Return empty array [] if no new words. ONLY return JSON, no other text."
-            )},
+            {
+                "role": "system",
+                "content": (
+                    "Extract any new Portuguese vocabulary words "
+                    "introduced in this exchange. "
+                    "Return JSON array: "
+                    '[{"word": "...", "english": "...", "context": "..."}]. '
+                    "Return empty array [] if no new words. ONLY return JSON, no other text."
+                ),
+            },
             {"role": "user", "content": f"User: {user_msg}\nTutor: {assistant_msg}"},
         ]
         try:
@@ -118,7 +131,9 @@ class ConversationEngine:
             for w in words:
                 if isinstance(w, dict) and "word" in w and "english" in w:
                     self.vocabulary = add_vocabulary(
-                        self.vocabulary, w["word"], w["english"],
+                        self.vocabulary,
+                        w["word"],
+                        w["english"],
                         w.get("context", ""),
                     )
                     self.new_words.append(w)
@@ -135,20 +150,26 @@ class ConversationEngine:
         session_path.write_text("\n\n".join(self.session_log))
 
         summary_prompt = [
-            {"role": "system", "content": (
-                "You are updating a learner's progress summary. Given the current summary "
-                "and the session transcript, produce an UPDATED summary that:\n"
-                "1. Increments sessions completed\n"
-                "2. Adds this session to Recent Sessions (keep only last 5)\n"
-                "3. Updates strengths/weaknesses based on performance\n"
-                "4. Updates grammar progress if applicable\n"
-                "5. Sets the correct current level (A1/A2/B1)\n"
-                "Keep the same markdown format. Be concise."
-            )},
-            {"role": "user", "content": (
-                f"## Current Summary\n{self.summary}\n\n"
-                f"## Session Transcript\n" + "\n".join(self.session_log[-20:])
-            )},
+            {
+                "role": "system",
+                "content": (
+                    "You are updating a learner's progress summary. Given the current summary "
+                    "and the session transcript, produce an UPDATED summary that:\n"
+                    "1. Increments sessions completed\n"
+                    "2. Adds this session to Recent Sessions (keep only last 5)\n"
+                    "3. Updates strengths/weaknesses based on performance\n"
+                    "4. Updates grammar progress if applicable\n"
+                    "5. Sets the correct current level (A1/A2/B1)\n"
+                    "Keep the same markdown format. Be concise."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"## Current Summary\n{self.summary}\n\n"
+                    f"## Session Transcript\n" + "\n".join(self.session_log[-20:])
+                ),
+            },
         ]
         try:
             resp = self.client.chat.completions.create(

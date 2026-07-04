@@ -1,7 +1,6 @@
-import json
 from datetime import datetime, timedelta
-from pathlib import Path
-from config import SUMMARY_PATH, VOCABULARY_PATH, RECORDS_DIR, GUARDRAILS
+
+from config import GUARDRAILS, RECORDS_DIR, SUMMARY_PATH, VOCABULARY_PATH
 
 
 def load_summary() -> str:
@@ -95,11 +94,11 @@ def save_vocabulary(entries: list[dict]):
         lines.append(f'- word: "{e["word"]}"')
         lines.append(f'  english: "{e.get("english", "")}"')
         lines.append(f'  context: "{e.get("context", "")}"')
-        lines.append(f'  ease: {e.get("ease", 2.5)}')
-        lines.append(f'  interval: {e.get("interval", 1)}')
-        lines.append(f'  last_reviewed: {e.get("last_reviewed", "1970-01-01")}')
-        lines.append(f'  confidence: {e.get("confidence", 0.5)}')
-        lines.append(f'  needs_review: {"true" if e.get("needs_review", True) else "false"}')
+        lines.append(f"  ease: {e.get('ease', 2.5)}")
+        lines.append(f"  interval: {e.get('interval', 1)}")
+        lines.append(f"  last_reviewed: {e.get('last_reviewed', '1970-01-01')}")
+        lines.append(f"  confidence: {e.get('confidence', 0.5)}")
+        lines.append(f"  needs_review: {'true' if e.get('needs_review', True) else 'false'}")
         lines.append("")
     VOCABULARY_PATH.write_text("\n".join(lines))
 
@@ -146,16 +145,18 @@ def add_vocabulary(entries: list[dict], word: str, english: str, context: str = 
     for e in entries:
         if e["word"] == word:
             return entries
-    entries.append({
-        "word": word,
-        "english": english,
-        "context": context,
-        "ease": 2.5,
-        "interval": 1,
-        "last_reviewed": datetime.now().strftime("%Y-%m-%d"),
-        "confidence": 0.3,
-        "needs_review": True,
-    })
+    entries.append(
+        {
+            "word": word,
+            "english": english,
+            "context": context,
+            "ease": 2.5,
+            "interval": 1,
+            "last_reviewed": datetime.now().strftime("%Y-%m-%d"),
+            "confidence": 0.3,
+            "needs_review": True,
+        }
+    )
     return entries
 
 
