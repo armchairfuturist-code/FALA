@@ -11,6 +11,9 @@ The frontier is at `docs/agents/tickets/` — query all `.md` files where `wayfi
 | 3 | Setup development environment | task | — (closed) |
 | 4 | Architecture documentation | research | — (closed) |
 | 5 | Testing and CI | task | — (closed) |
+| 6 | Fix SRS feedback loop | task | — (closed) |
+
+All 6 tickets closed. No frontier — all known work is done. Fog items below are candidates for the next ticket.
 
 ## Notes
 
@@ -31,12 +34,12 @@ The frontier is at `docs/agents/tickets/` — query all `.md` files where `wayfi
 - [Setup development environment](tickets/003-setup-development-environment.md) — pyproject.toml, ruff/pytest/mypy config, .env.example, scripts/bootstrap.sh + lint.sh, all lint passes clean
 - [Architecture documentation](tickets/004-architecture-documentation.md) — docs/architecture.md with module graph, data flow, SRS algorithm, prompt templates, audio pipeline, 8 design decisions, 8 latent issues documented; README claims checked
 - [Testing and CI](tickets/005-testing-and-ci.md) — 52 tests (config, progress, conversation, fala smoke test), .github/workflows/ci.yml, fixed load_vocabulary parsing bug
+- [Fix SRS feedback loop](tickets/006-fix-srs-feedback-loop.md) — `update_vocab_after_review()` and `save_learning_record()` wired into `conversation.py`; extraction prompt returns `{"new_words": [...], "assessments": [...]}`; 4 integration tests added; 56 tests total
 
 ## Fog
 
 - **Feature roadmap** — what to build after infrastructure is solid? New modes? Web/mobile port? Pronunciation analyzer? Can't sharpen until the codebase is understood.
 - **TTS/STT quality** — current OpenAI TTS voices are English-optimised; pt-PT voices are scarce. Worth investigating alternatives (ElevenLabs, local models) when the audio module gets attention.
-- **SRS broken** — `update_vocab_after_review()` and `save_learning_record()` exist but are never called. Words are added at confidence=0.3 but never graduate. Needs a dedicated fix ticket.
 - **Conversation UX** — the warmup→free-conversation flow works, but session quality depends entirely on the LLM prompt. Long-term improvements likely need prompt versioning and A/B evaluation.
 - **Multi-user / persistence** — currently single-user file-based. Multi-user or cloud sync is a known direction but too vague to ticket.
 - **Evaluation** — how to measure learning progress objectively? LLM summary is subjective. A structured assessment mode is a candidate feature.

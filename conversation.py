@@ -18,6 +18,8 @@ from progress import (
     load_vocabulary,
     save_summary,
     save_vocabulary,
+    save_learning_record,
+    update_vocab_after_review,
 )
 
 
@@ -104,18 +106,33 @@ class ConversationEngine:
         return resp.choices[0].message.content or ""
 
     def _extract_vocab_from_exchange(self, user_msg: str, assistant_msg: str):
+        """Extract new words and assess review words from an exchange."""
+        # Collect words currently needing review so we can assess them
+        review_candidates = [
+            e["word"] for e in self.vocabulary if e.get("needs_review", False)
+        ]
+
+        prompt_text = (
+            "Analyse this learner-tutor exchange and return a JSON object.\n\n"
+            "1. Extract any NEW Portuguese vocabulary words introduced by the tutor.\n"
+            "2. For each review word that the LEARNER attempted to use (not the tutor), "
+            "assess whether the learner used it correctly.\n\n"
+            "Return ONLY JSON with this shape, no other text:\n"
+            '{\n'
+            '  "new_words": [{"word": "...", "english": "...", "context": "..."}],\n'
+            '  "assessments": [{"word": "...", "correct": true}],\n'
+            '  "notes": "..."\n'
+            '}\n\n'
+        )
+        if review_candidates:
+            prompt_text += (
+                "Review words the learner may have attempted: "
+                f"{', '.join(review_candidates)}\n\n"
+            )
+        prompt_text += f"User: {user_msg}\nTutor: {assistant_msg}"
+
         extract_prompt = [
-            {
-                "role": "system",
-                "content": (
-                    "Extract any new Portuguese vocabulary words "
-                    "introduced in this exchange. "
-                    "Return JSON array: "
-                    '[{"word": "...", "english": "...", "context": "..."}]. '
-                    "Return empty array [] if no new words. ONLY return JSON, no other text."
-                ),
-            },
-            {"role": "user", "content": f"User: {user_msg}\nTutor: {assistant_msg}"},
+            {"role": "system", "content": prompt_text},
         ]
         try:
             resp = self.client.chat.completions.create(
@@ -127,8 +144,10 @@ class ConversationEngine:
             text = resp.choices[0].message.content.strip()
             if text.startswith("```"):
                 text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-            words = json.loads(text)
-            for w in words:
+            data = json.loads(text)
+
+            # Extract new words
+            for w in data.get("new_words", []):
                 if isinstance(w, dict) and "word" in w and "english" in w:
                     self.vocabulary = add_vocabulary(
                         self.vocabulary,
@@ -137,6 +156,13 @@ class ConversationEngine:
                         w.get("context", ""),
                     )
                     self.new_words.append(w)
+
+            # Assess review words
+            for a in data.get("assessments", []):
+                if isinstance(a, dict) and "word" in a and "correct" in a:
+                    self.vocabulary = update_vocab_after_review(
+                        self.vocabulary, a["word"], a["correct"]
+                    )
         except Exception:
             pass
 
@@ -185,4 +211,24 @@ class ConversationEngine:
             pass
 
         word_count = len(self.new_words)
-        return f"Session saved. {word_count} new words added. See you next time!"
+
+        # Save learning records for words that graduated
+        graduated = [
+            e for e in self.vocabulary
+            if e.get("confidence", 0) >= 0.8 and not e.get("needs_review", True)
+        ]
+        new_graduated = [
+            gw for gw in self.new_words
+            if any(v["word"] == gw["word"] for v in graduated)
+        ]
+        for gw in new_graduated:
+            title = f"Learned: {gw['word']}"
+            content = (
+                f"Word: {gw['word']}\n"
+                f"English: {gw['english']}\n"
+                f"Context: {gw.get('context', '')}\n"
+                f"You've learned this word!"
+            )
+            save_learning_record(title, content)
+
+        return f"Session saved. {word_count} new words added, {len(new_graduated)} words learned. See you next time!"

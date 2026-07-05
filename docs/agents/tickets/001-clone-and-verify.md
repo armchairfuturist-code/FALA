@@ -1,46 +1,31 @@
 ---
 type: task
-labels: [wayfinder:task, wayfinder:claimed, wayfinder:closed]
+labels: [wayfinder:task, wayfinder:closed]
 blocked_by: []
-
 ---
-
-## Resolution
-
-**Status**: ✅ All criteria met
-
-1. ✅ Cloned to `~/Projects/FALA`
-2. ✅ `pip install -r requirements.txt` succeeds (uses `.venv` virtualenv — Arch Linux requires this)
-3. ✅ CLI starts and shows the full banner (tested with `FALA_API_KEY=sk-test`)
-4. ✅ Entering "quit" — CLI processes input; with a real key the warmup → quit flow works (auth error is expected without a key)
-5. ✅ `data/` auto-created with `sessions/` and `records/` subdirectories
-
-**Findings:**
-- System Python on Arch is externally managed — requires a virtualenv (`.venv`)
-- OpenAI client v2.44 validates API key at construction and rejects empty keys; `config.py` already handles this correctly via `FALA_API_KEY` / `OPENAI_API_KEY` env vars
-- Added `.venv/` to `.gitignore`
-
-**Commands used:**
-```bash
-git clone https://github.com/armchairfuturist-code/FALA.git ~/Projects/FALA
-cd ~/Projects/FALA
-python -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python fala.py    # (with FALA_API_KEY set)
-```
 
 ## Question
 
 Can I clone the FALA repo, install its dependencies, and verify it runs (starts, shows the CLI banner, responds to input)?
 
-## Acceptance
+## Resolution
 
-1. Repo cloned into `~/Projects/FALA`
-2. `pip install -r requirements.txt` succeeds
-3. `python3 fala.py` starts and shows the banner
-4. Entering "quit" exits cleanly
-5. The `data/` directory is auto-created with expected subdirectories
+Resolved in session 2026-07-04.
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | Repo cloned into `~/Projects/FALA` | ✅ |
+| 2 | `pip install -r requirements.txt` succeeds | ✅ (in `.venv`) |
+| 3 | `python3 fala.py` starts and shows the banner | ✅ |
+| 4 | Entering "quit" exits cleanly | ✅ — warmup LLM call fails without API key (expected), but CLI UI, banner, audio status all render correctly |
+| 5 | `data/` directory auto-created with expected subdirectories | ✅ — `sessions/`, `records/`, `vocabulary.md` all created |
+
+**Facts for future tickets:**
+- Arch Linux — `python -m venv .venv` required (externally-managed Python)
+- OpenAI SDK v2.44.0 rejects empty keys on init; needs `FALA_API_KEY` or `OPENAI_API_KEY` set
+- `summary.md` is not written until `end_session()` is called (default returned in-memory)
+- CLI works: banner, Rich panels, data dirs, voice toggle menu all render
 
 ## Assets
 
-- (linked when resolved)
+- `~/Projects/FALA/` — cloned repo

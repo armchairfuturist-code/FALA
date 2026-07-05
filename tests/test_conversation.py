@@ -1,6 +1,7 @@
 """Tests for conversation.py — ConversationEngine."""
 
 from unittest.mock import MagicMock, patch
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helper: build a minimal fake OpenAI response
@@ -186,8 +187,8 @@ class TestExtractVocabFromExchange:
                     with patch("conversation.OpenAI") as mock_client:
                         mock_client.return_value.chat.completions.create.return_value = (
                             _fake_completion(
-                                '[{"word": "livro", "english": "book", "context": '
-                                '"O livro é azul."}]'
+                                '{"new_words": [{"word": "livro", "english": "book", '
+                                '"context": "O livro é azul."}], "assessments": []}'
                             )
                         )
                         engine = ConversationEngine()
@@ -205,8 +206,9 @@ class TestExtractVocabFromExchange:
                     with patch("conversation.OpenAI") as mock_client:
                         mock_client.return_value.chat.completions.create.return_value = (
                             _fake_completion(
-                                '```json\n[{"word": "casa", '
-                                '"english": "house", "context": ""}]\n```'
+                                '```json\n{"new_words": [{"word": "casa", '
+                                '"english": "house", "context": ""}], '
+                                '"assessments": []}\n```'
                             )
                         )
                         engine = ConversationEngine()
@@ -214,7 +216,7 @@ class TestExtractVocabFromExchange:
                         engine._extract_vocab_from_exchange("x", "y")
                         assert len(engine.vocabulary) == 1
 
-    def test_handles_empty_array(self):
+    def test_handles_empty_response(self):
         from conversation import ConversationEngine
 
         with patch("conversation.ConversationEngine._build_system_prompt"):
@@ -222,7 +224,7 @@ class TestExtractVocabFromExchange:
                 with patch("conversation.load_vocabulary", return_value=[]):
                     with patch("conversation.OpenAI") as mock_client:
                         mock_client.return_value.chat.completions.create.return_value = (
-                            _fake_completion("[]")
+                            _fake_completion('{"new_words": [], "assessments": []}')
                         )
                         engine = ConversationEngine()
                         engine.vocabulary = []
@@ -243,6 +245,68 @@ class TestExtractVocabFromExchange:
                         engine.vocabulary = [{"word": "existing"}]
                         engine._extract_vocab_from_exchange("x", "y")
                         assert len(engine.vocabulary) == 1
+
+    def test_processes_assessments(self):
+        from conversation import ConversationEngine
+
+        with patch("conversation.ConversationEngine._build_system_prompt"):
+            with patch("conversation.load_summary", return_value=""):
+                with patch("conversation.load_vocabulary", return_value=[]):
+                    with patch("conversation.OpenAI") as mock_client:
+                        mock_client.return_value.chat.completions.create.return_value = (
+                            _fake_completion(
+                                '{"new_words": [], "assessments": '
+                                '[{"word": "olá", "correct": true}]}'
+                            )
+                        )
+                        engine = ConversationEngine()
+                        engine.vocabulary = [
+                            {
+                                "word": "olá",
+                                "english": "hello",
+                                "ease": 2.5,
+                                "interval": 1,
+                                "last_reviewed": "2026-01-01",
+                                "confidence": 0.5,
+                                "needs_review": True,
+                            }
+                        ]
+                        engine._extract_vocab_from_exchange("Olá!", "Boa! Olá!")
+                        entry = engine.vocabulary[0]
+                        assert entry["confidence"] == 0.65  # 0.5 + 0.15
+                        assert entry["interval"] > 1
+                        assert entry["last_reviewed"] != "2026-01-01"
+
+    def test_assessment_wrong_answer_resets_interval(self):
+        from conversation import ConversationEngine
+
+        with patch("conversation.ConversationEngine._build_system_prompt"):
+            with patch("conversation.load_summary", return_value=""):
+                with patch("conversation.load_vocabulary", return_value=[]):
+                    with patch("conversation.OpenAI") as mock_client:
+                        mock_client.return_value.chat.completions.create.return_value = (
+                            _fake_completion(
+                                '{"new_words": [], "assessments": '
+                                '[{"word": "bom", "correct": false}]}'
+                            )
+                        )
+                        engine = ConversationEngine()
+                        engine.vocabulary = [
+                            {
+                                "word": "bom",
+                                "english": "good",
+                                "ease": 2.5,
+                                "interval": 5,
+                                "last_reviewed": "2026-06-01",
+                                "confidence": 0.7,
+                                "needs_review": False,
+                            }
+                        ]
+                        engine._extract_vocab_from_exchange("bom dia", "correction")
+                        entry = engine.vocabulary[0]
+                        assert entry["confidence"] == pytest.approx(0.5, rel=1e-6)  # 0.7 - 0.2
+                        assert entry["interval"] == 1
+                        assert entry["needs_review"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -285,3 +349,62 @@ class TestEndSession:
         config.SUMMARY_PATH = old_summary_path
         config.VOCABULARY_PATH = old_vocab_path
         config.SESSIONS_DIR = old_sessions_dir
+
+    def test_graduated_words_save_learning_record(self):
+        from conversation import ConversationEngine
+
+        with patch("conversation.ConversationEngine._build_system_prompt"):
+            with patch("conversation.load_summary", return_value="- Current level: A1"):
+                with patch("conversation.load_vocabulary", return_value=[]):
+                    with patch("conversation.OpenAI"):
+                        engine = ConversationEngine()
+
+        engine.new_words = [{"word": "aprendido", "english": "learned"}]
+        engine.vocabulary = [
+            {
+                "word": "aprendido",
+                "english": "learned",
+                "ease": 2.5,
+                "interval": 30,
+                "last_reviewed": "2026-07-04",
+                "confidence": 0.85,
+                "needs_review": False,
+            }
+        ]
+
+        with patch("conversation.save_summary"):
+            with patch("conversation.save_learning_record") as mock_save:
+                with patch(
+                    "conversation.ConversationEngine._call_llm",
+                    return_value="new summary",
+                ):
+                    result = engine.end_session()
+
+        assert "1 words learned" in result
+        mock_save.assert_called_once()
+        args, _ = mock_save.call_args
+        assert "aprendido" in args[0]
+
+    def test_no_graduated_words_no_record(self):
+        from conversation import ConversationEngine
+
+        with patch("conversation.ConversationEngine._build_system_prompt"):
+            with patch("conversation.load_summary", return_value="- Current level: A1"):
+                with patch("conversation.load_vocabulary", return_value=[]):
+                    with patch("conversation.OpenAI"):
+                        engine = ConversationEngine()
+
+        engine.new_words = []
+        engine.vocabulary = []
+
+        with patch("conversation.save_summary"):
+            with patch("conversation.save_learning_record") as mock_save:
+                with patch(
+                    "conversation.ConversationEngine._call_llm",
+                    return_value="new summary",
+                ):
+                    result = engine.end_session()
+
+        assert "0 words learned" in result
+        assert "Session saved" in result
+        mock_save.assert_not_called()
