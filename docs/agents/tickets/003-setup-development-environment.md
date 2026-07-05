@@ -1,7 +1,8 @@
 ---
 type: task
-labels: [wayfinder:task, wayfinder:claimed, wayfinder:closed]
+labels: [wayfinder:task]
 blocked_by: [001-clone-and-verify]
+assigned_to: closed
 
 ---
 

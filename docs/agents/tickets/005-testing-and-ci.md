@@ -1,7 +1,8 @@
 ---
 type: task
-labels: [wayfinder:task, wayfinder:claimed, wayfinder:closed]
+labels: [wayfinder:task]
 blocked_by: [002-bootstrap-agent-infrastructure, 003-setup-development-environment, 004-architecture-documentation]
+assigned_to: closed
 
 ---
 

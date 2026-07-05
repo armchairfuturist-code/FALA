@@ -1,7 +1,8 @@
 ---
 type: task
-labels: [wayfinder:task, wayfinder:closed]
+labels: [wayfinder:task]
 blocked_by: []
+assigned_to: closed
 ---
 
 ## Question

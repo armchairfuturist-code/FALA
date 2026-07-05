@@ -1,7 +1,8 @@
 ---
 type: research
-labels: [wayfinder:research, wayfinder:claimed, wayfinder:closed]
+labels: [wayfinder:research]
 blocked_by: [002-bootstrap-agent-infrastructure, 003-setup-development-environment]
+assigned_to: closed
 
 ---
 

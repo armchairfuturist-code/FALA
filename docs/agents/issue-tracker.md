@@ -6,7 +6,7 @@ This project uses a **local-markdown issue tracker** for wayfinding — tickets 
 
 ### Labels
 
-Each ticket has a YAML frontmatter with a `labels` field:
+Each ticket has a YAML frontmatter with a `labels` field. The only wayfinder labels are the type labels (one per ticket):
 
 | Label | Meaning |
 |-------|---------|
@@ -15,9 +15,8 @@ Each ticket has a YAML frontmatter with a `labels` field:
 | `wayfinder:prototype` | Build a cheap artifact to react to |
 | `wayfinder:grilling` | Conversation-driven decision |
 | `wayfinder:task` | Manual work or setup |
-| `wayfinder:claimed` | Currently being worked on |
-| `wayfinder:closed` | Resolved and closed |
-| `wayfinder:unclaimed` | Available to claim |
+
+Claiming is done via `assigned_to` (see below), **not** labels.
 
 ### Blocking
 
@@ -27,24 +26,34 @@ Blocking is expressed in the `blocked_by` frontmatter field — an array of tick
 blocked_by: [001-clone-and-verify]
 ```
 
-A ticket is **unblocked** when every ticket in `blocked_by` has `wayfinder:closed`.
+A ticket is **unblocked** when every ticket in `blocked_by` has `assigned_to: closed`.
+
+### Claiming
+
+Tickets are claimed by setting the `assigned_to` frontmatter field to the dev's name **before** starting work:
+
+```yaml
+assigned_to: alex
+```
+
+An open ticket with no `assigned_to` (or `assigned_to: ""`) is unclaimed.
 
 ### Frontier
 
 The **frontier** is the set of tickets that are:
-- Open (no `wayfinder:closed` label)
+- Open (`assigned_to` is not `closed`)
 - Unblocked (all `blocked_by` entries are closed)
-- Unclaimed (no `wayfinder:claimed` label)
+- Unclaimed (no `assigned_to` set)
 
 Find the frontier by listing `docs/agents/tickets/*.md` and checking frontmatter.
 
 ### Ticket lifecycle
 
-1. Create ticket with `wayfinder:unclaimed` label
-2. Claim: change label to `wayfinder:claimed` **before** starting work
-3. Resolve: add a `## Resolution` section, add `wayfinder:closed` label
+1. Create ticket with no `assigned_to`, `blocked_by` as appropriate
+2. Claim: set `assigned_to: alex` **before** starting work
+3. Resolve: add a `## Resolution` section, set `assigned_to: closed`
 4. Append a one-line pointer to the map's `## Decisions so far`
-5. Graduate any fog that became specifiable
+5. Graduate any fog that became specifiable; rule out of scope if past the destination
 
 ### Writing tickets
 
@@ -53,8 +62,9 @@ Each ticket is a markdown file in `docs/agents/tickets/`:
 ```markdown
 ---
 type: research | prototype | grilling | task
-labels: [wayfinder:<type>, wayfinder:unclaimed]
+labels: [wayfinder:<type>]
 blocked_by: []
+assigned_to: ""
 ---
 
 ## Question

@@ -1,19 +1,8 @@
 # FALA — Wayfinder Map
 
-## Tickets
+## Destination
 
-The frontier is at `docs/agents/tickets/` — query all `.md` files where `wayfinder:claimed` is absent and `blocked_by` entries are all closed (or empty). Current ticket set:
-
-| # | Name | Type | Blocked by |
-|---|------|------|------------|
-| 1 | Clone and verify | task | — (closed) |
-| 2 | Bootstrap agent infrastructure | task | — (closed) |
-| 3 | Setup development environment | task | — (closed) |
-| 4 | Architecture documentation | research | — (closed) |
-| 5 | Testing and CI | task | — (closed) |
-| 6 | Fix SRS feedback loop | task | — (closed) |
-
-All 6 tickets closed. No frontier — all known work is done. Fog items below are candidates for the next ticket.
+A conversational European Portuguese (pt-PT) CLI tutor you can run daily — reliable, pleasant to use, and effective for going from A1 to B1. All 6 infrastructure/SRS tickets are closed; remaining work sharpens the tutor itself.
 
 ## Notes
 
@@ -21,8 +10,8 @@ All 6 tickets closed. No frontier — all known work is done. Fog items below ar
 - **Stack**: Python 3.10+, OpenAI SDK, Rich (CLI), Whisper (local STT), OpenAI TTS
 - **Structure**: `fala.py` (entrypoint) → `conversation.py` (LLM orchestration) → `progress.py` (SRS + persistence) → `audio.py` (STT/TTS pipeline)
 - **Skills to consult**: `domain-modeling`, `grilling`, `implement`, `prototype`, `code-review`
-- **Standing**: Multi-session effort. Bootstrap infrastructure first, then develop features. Resolve tickets in frontier order.
-- **Tracker**: Local-markdown (`docs/agents/tickets/`). Each ticket is a `.md` file.
+- **Standing**: Bootstrap phase complete (6 closed tickets). Next tickets come from graduating "Not yet specified" items.
+- **Tracker**: Local-markdown (`docs/agents/tickets/`). Tickets are claimed by setting the `assigned_to` field in frontmatter. No labels beyond `wayfinder:<type>`.
 - **Git**: Alex Myers <alex@thearmchairfuturist.com>
 
 ## Decisions so far
@@ -36,10 +25,14 @@ All 6 tickets closed. No frontier — all known work is done. Fog items below ar
 - [Testing and CI](tickets/005-testing-and-ci.md) — 52 tests (config, progress, conversation, fala smoke test), .github/workflows/ci.yml, fixed load_vocabulary parsing bug
 - [Fix SRS feedback loop](tickets/006-fix-srs-feedback-loop.md) — `update_vocab_after_review()` and `save_learning_record()` wired into `conversation.py`; extraction prompt returns `{"new_words": [...], "assessments": [...]}`; 4 integration tests added; 56 tests total
 
-## Fog
+## Not yet specified
 
-- **Feature roadmap** — what to build after infrastructure is solid? New modes? Web/mobile port? Pronunciation analyzer? Can't sharpen until the codebase is understood.
 - **TTS/STT quality** — current OpenAI TTS voices are English-optimised; pt-PT voices are scarce. Worth investigating alternatives (ElevenLabs, local models) when the audio module gets attention.
 - **Conversation UX** — the warmup→free-conversation flow works, but session quality depends entirely on the LLM prompt. Long-term improvements likely need prompt versioning and A/B evaluation.
-- **Multi-user / persistence** — currently single-user file-based. Multi-user or cloud sync is a known direction but too vague to ticket.
 - **Evaluation** — how to measure learning progress objectively? LLM summary is subjective. A structured assessment mode is a candidate feature.
+- **Web/mobile port** — a known direction but too vague to ticket; might be worth a prototype to assess feasibility.
+
+## Out of scope
+
+- **Multi-user / cloud sync** — this is a personal CLI tool.
+- **Multi-language support** — EP-only by design. Adding other languages would be a separate effort.
