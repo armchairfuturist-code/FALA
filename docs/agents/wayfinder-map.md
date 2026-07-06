@@ -25,6 +25,7 @@ A conversational European Portuguese (pt-PT) CLI tutor you can run daily — rel
 - [Testing and CI](tickets/005-testing-and-ci.md) — 52 tests (config, progress, conversation, fala smoke test), .github/workflows/ci.yml, fixed load_vocabulary parsing bug
 - [Fix SRS feedback loop](tickets/006-fix-srs-feedback-loop.md) — `update_vocab_after_review()` and `save_learning_record()` wired into `conversation.py`; extraction prompt returns `{"new_words": [...], "assessments": [...]}`; 4 integration tests added; 56 tests total
 - [Research TTS/STT quality for pt-PT](tickets/007-research-tts-stt-ptpt.md) — 6 TTS and 7 STT options evaluated; Piper TTS (tugão) is best local neural voice; Google STT has explicit pt-PT locale; recommendation is multi-tier quality progression
+- [Add Piper TTS](tickets/008-add-piper-tts.md) — Piper TTS engine added to `audio.py`; `FALA_TTS=piper` env var switches to local tugão pt-PT voice; auto-downloads from HuggingFace; banner shows active provider
 
 ## Not yet specified
 
