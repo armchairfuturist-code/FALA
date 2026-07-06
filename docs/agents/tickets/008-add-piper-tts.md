@@ -2,7 +2,7 @@
 type: task
 labels: [wayfinder:task]
 blocked_by: [007-research-tts-stt-ptpt]
-assigned_to: ""
+assigned_to: alex
 ---
 
 ## Question

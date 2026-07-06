@@ -87,14 +87,24 @@
 
 ## Recommendation
 
-**For a "run daily" CLI tutor, the pragmatic path:**
+**The honest picture:** No local TTS engine has great, actively-maintained European Portuguese support. Here's the landscape:
 
-1. **Keep current setup** (OpenAI TTS + Whisper) as the default — it works.
-2. **Add Piper TTS (tugão)** as an offline/local TTS option — no API cost, decent quality, dedicated pt-PT voice. Switchable via `FALA_TTS=piper` env var.
-3. **Add Google STT as an opt-in** for users who want better pt-PT recognition — switchable via `FALA_STT_PROVIDER=google`. Free for low usage.
-4. **Keep eSpeak-NG** as a universal fallback for systems without Piper.
+| Engine | pt-PT? | Maintained? | CPU? | Quality | 
+|--------|--------|-------------|------|---------|
+| **Piper (tugão)** | ✅ Dedicated pt-PT voice | ⚠️ Original repo archived, successor `OHF-Voice/piper1-gpl` active (v1.4.2, Apr 2026) | ✅ | Medium (VITS/ONNX, 20M params) |
+| **Kokoro-82M** | ❌ pt-BR only (3 voices) | ✅ Very active (7.8k stars) | ✅ Excellent (82M params, real-time) | High (StyleTTS2) |
+| **ElevenLabs** | ✅ Can generate pt-PT via Voice Design | ✅ Active, cloud | ❌ | Highest |
+| **Coqui XTTSv2** | ⚠️ Via voice cloning + pt-PT reference | ✅ Active (idiap fork, v0.27.5) | ⚠️ Needs GPU | High |
+| **OpenAI TTS** | ❌ English-optimised, no true pt-PT | ✅ Active, cloud | ❌ | Moderate (for pt-PT) |
 
-This gives a quality progression: eSpeak (fallback) → Piper (default local) → OpenAI (cloud, current) → ElevenLabs (best cloud).
+**Piper is the only free, local, CPU-runnable engine with a dedicated pt-PT voice.** It's not state-of-the-art — the model is a few years old, medium quality — but *nothing newer has filled the gap*. Kokoro (the best modern local TTS) only has pt-BR voices, which would teach Brazilian pronunciation (against the project's goals).
+
+For a "run daily" CLI tutor, the pragmatic recommendation:
+
+1. **Keep current setup** (OpenAI TTS + Whisper) as the default — it works, and OpenAI TTS with `instructions="Speak in a European Portuguese accent"` may be adequate.
+2. **Add Piper TTS (tugão)** as a free offline fallback — switchable via `FALA_TTS=piper`. Voice files are still hosted on HuggingFace and work with the active successor engine.
+3. **Keep eSpeak-NG** as a universal fallback.
+4. **ElevenLabs** remains the best quality upgrade path if cloud/paid is acceptable.
 
 ## Open questions for a follow-up ticket
 

@@ -10,7 +10,7 @@ from conversation import ConversationEngine
 console = Console()
 
 try:
-    from audio import listen, speak
+    from audio import get_tts_provider_info, listen, speak
 
     AUDIO_AVAILABLE = True
 except ImportError:
@@ -35,7 +35,8 @@ def main():
     console.print()
 
     if AUDIO_AVAILABLE:
-        console.print("[dim]Audio: enabled | /voice to toggle voice input[/dim]")
+        tts_info = get_tts_provider_info()
+        console.print(f"[dim]{tts_info} | /voice to toggle voice input[/dim]")
     else:
         console.print("[dim]Audio: install openai package for TTS support[/dim]")
     console.print()
