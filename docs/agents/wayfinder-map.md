@@ -29,7 +29,6 @@ A conversational European Portuguese (pt-PT) CLI tutor you can run daily — rel
 
 ## Not yet specified
 
-- **Conversation UX** — the warmup→free-conversation flow works, but session quality depends entirely on the LLM prompt. Long-term improvements likely need prompt versioning and A/B evaluation.
 - **Evaluation** — how to measure learning progress objectively? LLM summary is subjective. A structured assessment mode is a candidate feature.
 - **Web/mobile port** — a known direction but too vague to ticket; might be worth a prototype to assess feasibility.
 
