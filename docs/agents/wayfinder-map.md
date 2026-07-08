@@ -28,10 +28,10 @@ A conversational European Portuguese (pt-PT) CLI tutor you can run daily — rel
 - [Research TTS/STT quality for pt-PT](tickets/007-research-tts-stt-ptpt.md) — 6 TTS and 7 STT options evaluated; Piper TTS (tugão) is best local neural voice; Google STT has explicit pt-PT locale; recommendation is multi-tier quality progression
 - [Add Piper TTS](tickets/008-add-piper-tts.md) — Piper TTS engine added to `audio.py`; `FALA_TTS=piper` env var switches to local tugão pt-PT voice; auto-downloads from HuggingFace; banner shows active provider
 - [Review conversation prompts](tickets/009-review-conversation-prompts.md) — Researched Praktika, Talkpal, and academic sources; rewrote `system.md` and `warmup.md` with gentle in-flow correction, no-direct-answer guardrails, conditional pronunciation feedback, and natural name introduction
+- [Research evaluation/progress measurement](tickets/010-research-evaluation.md) — Surveyed Duolingo, Anki, LingQ, CEFR vocab; recommended CEFR breakdown + SRS health report + `/stats` command (ticket #011 implements)
 
 ## Not yet specified
 
-- **Evaluation** — how to measure learning progress objectively? LLM summary is subjective. A structured assessment mode is a candidate feature.
 - **Web/mobile port** — a known direction but too vague to ticket; might be worth a prototype to assess feasibility.
 
 ## Out of scope
