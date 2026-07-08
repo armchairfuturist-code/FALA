@@ -8,13 +8,15 @@ This project uses a **local-markdown issue tracker** for wayfinding — tickets 
 
 Each ticket has a YAML frontmatter with a `labels` field. The only wayfinder labels are the type labels (one per ticket):
 
-| Label | Meaning |
-|-------|---------|
-| `wayfinder:map` | The map issue (one per project effort) |
-| `wayfinder:research` | Reading/investigation ticket |
-| `wayfinder:prototype` | Build a cheap artifact to react to |
-| `wayfinder:grilling` | Conversation-driven decision |
-| `wayfinder:task` | Manual work or setup |
+| Label | Mode | Meaning |
+|-------|------|---------|
+| `wayfinder:map` | — | The map issue (one per project effort) |
+| `wayfinder:research` | AFK | Reading/investigation — agent drives alone |
+| `wayfinder:prototype` | HITL | Build a cheap artifact — human reacts |
+| `wayfinder:grilling` | HITL | Conversation-driven decision — human answers |
+| `wayfinder:task` | HITL or AFK | Manual work blocking a decision — agent drives when it can, hands checklist when it can't |
+
+(AFK = agent resolves without the human; HITL = human-in-the-loop, requires live exchange.)
 
 Claiming is done via `assigned_to` (see below), **not** labels.
 
