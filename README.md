@@ -1,108 +1,176 @@
 # fala
 
-A conversational European Portuguese tutor for English speakers. No gamification, no streaks, no cartoon owl — just you and a patient tutor having a conversation.
-
-## What it is
-
-`fala` is a CLI-based language learning tool that teaches European Portuguese (pt-PT) through natural conversation. It starts with simple phrases and progressively increases complexity as you improve. The tutor always speaks back to you — reinforcing listening skills alongside vocabulary and grammar.
+A conversational European Portuguese (pt-PT) tutor for English speakers. No gamification, no streaks, no cartoon owl — just you and a patient tutor having a conversation.
 
 **Target proficiency:** A1 → B1 (survive-in-Portugal level)
 
-## Why conversation-first
+---
 
-The biggest component of learning a language is listening to conversations, not memorizing vocabulary lists. `fala` is built on this principle: you learn by talking and listening, with a tutor that adapts to your level in real time.
+## Quick Start (60 seconds)
 
-## How it works
+```bash
+# 1. Clone and enter
+git clone https://github.com/armchairfuturist-code/FALA.git
+cd FALA
 
-Each session follows a structured flow:
+# 2. Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate   # Windows
 
-1. **Status report** — see where you left off, what's due for review
-2. **Warm-up** — review trouble words (retrieval practice), learn new vocabulary, introduce a grammar point
-3. **Free conversation** — natural dialogue that weaves in what you've been taught. The learner steers.
-4. **Session end** — progress is compressed into a rolling summary that persists across sessions
+# 3. Install dependencies
+pip install -r requirements.txt
 
-The tutor uses spaced repetition behind the scenes. Words you struggle with come back more often; words you know well fade into the background. Every session builds on the last.
+# 4. Set your API key (required — the app needs an LLM to work)
+export OPENAI_API_KEY=sk-...  # or FALA_API_KEY if using a different provider
 
-## Features
+# 5. Run
+python3 fala.py
+```
 
-- **LLM-powered tutoring** — a single large model handles conversation, error correction, pronunciation feedback, and difficulty adjustment
-- **European Portuguese only** — no Brazilian vocabulary or pronunciation compromises
-- **Voice input/output** — the tutor always speaks (Piper local TTS or OpenAI cloud TTS); you can type or speak your responses
-- **Gentle in-flow error correction** — the tutor corrects by modelling the correct version naturally, not with red markers. Never reveals the answer directly — guides with hints instead.
-- **Phase-dependent scaffolding** — heavy English support at A1, fading to mostly Portuguese by B1
-- **Pronunciation feedback** — when speaking, the tutor evaluates your speech and gives targeted feedback on sounds hard for English speakers (nasal vowels, lh, nh, open/closed vowels)
-- **Persistent memory** — a rolling summary tracks your strengths, weaknesses, grammar progress, and vocabulary across unlimited sessions
-- **Spaced repetition** — LLM-assessed confidence scores feed an SM-2-style scheduler
-- **CEFR vocabulary breakdown** — every word is mapped to a CEFR band (A1/A2/B1/B2+) via a frequency-ranked pt-PT word list. See your progress at any time with `/stats`.
-- **SRS health report** — session end shows mature word count, average confidence, and CEFR distribution
-- **56 automated tests** — unit tests for SRS logic, conversation engine, config, and CLI smoke tests
+You'll see: the tutor greets you, introduces itself, and starts a warm-up. For your very first session, it will ask **"Como te chamas?"** in Portuguese — that's intentional, it's a teaching moment. Type your name in Portuguese and the conversation flows from there.
 
-## Setup
+**Commands during a session:**
+- `/voice` — toggle voice input mode (speak instead of type)
+- `/stats` — show your vocabulary breakdown by CEFR level and SRS health
+- `quit` / `exit` / `sair` — end the session
+
+---
+
+## What you need to know as a beta tester
+
+### You need an API key
+The app requires an LLM provider. OpenAI is the default, but any OpenAI-compatible API works (Groq, Together, local Ollama, etc.). Set `FALA_BASE_URL` and `FALA_API_KEY` if not using OpenAI.
+
+### Audio
+- **TTS (tutor speaks)**: enabled by default via OpenAI TTS (cloud). For offline/free TTS, install Piper (`pip install piper-tts` then `export FALA_TTS=piper`)
+- **STT (you speak)**: optional. Install `pip install openai-whisper` then use `/voice` during a session
+- **No audio at all?**: You can still type-only. The app works fine without audio — just ignore the TTS errors.
+
+### First session
+- The tutor is warm and patient. A1 means heavy English support; B1 means mostly Portuguese.
+- Say anything — make mistakes. The tutor is designed to correct you gently, not to judge.
+- Sessions are saved automatically. You can stop anytime with `quit` and pick up later.
+
+### Known limitations
+- The tutor's voice is OpenAI's TTS (English-optimised) by default. Piper (tugão) is free and local but quality is medium.
+- Pronunciation feedback only works when you **speak** (voice input), not when you type.
+- No multi-user support — this is a personal tool, single-user file-based.
+- The web prototype (`python3 web.py`) is minimal — chat only, no voice.
+
+---
+
+## Setup (detailed)
 
 ### Prerequisites
-
 - Python 3.10+
 - A virtual environment (required on Arch Linux — system Python is externally managed)
 
 ```bash
-cd fala
+cd FALA
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### OpenAI (default TTS)
+### LLM provider (required)
+The app needs an LLM to run. Pick one:
 
+**OpenAI (default):**
 ```bash
 export OPENAI_API_KEY=sk-...
 ```
 
-Or use a different provider:
-
+**Other provider (Groq, Together, Ollama, etc.):**
 ```bash
 export FALA_BASE_URL=https://your-provider.com/v1
 export FALA_API_KEY=your-key
 export FALA_MODEL=your-model
 ```
 
-### Piper TTS (local, offline, free)
+### TTS (tutor voice)
 
-Piper provides a dedicated European Portuguese voice (`tugão`). The voice model auto-downloads (~63 MB) on first use.
+| Option | How | Quality | Cost | Offline |
+|--------|-----|---------|------|---------|
+| **OpenAI** (default) | Nothing to install — uses `OPENAI_API_KEY` | Good, but English-optimised | Per-character billing | ❌ |
+| **Piper** (local) | `pip install piper-tts` then `export FALA_TTS=piper` | Medium (dedicated pt-PT voice) | Free | ✅ |
+| **None** | Ignore TTS errors — type-only works fine | — | — | ✅ |
 
-```bash
-pip install piper-tts
-export FALA_TTS=piper
-```
+The Piper voice model auto-downloads (~63 MB) on first use.
 
-### Voice input
-
-For speech-to-text, install Whisper locally:
-
+### STT (your voice input)
+Optional. Install Whisper:
 ```bash
 pip install openai-whisper
 ```
+Then use `/voice` during a session to switch to voice input mode.
 
-## Usage
-
+### Web prototype
+A minimal web UI is available:
 ```bash
-python3 fala.py
+pip install fastapi uvicorn python-multipart
+python3 web.py
 ```
+Open http://127.0.0.1:8080 in your browser. Chat only, no voice in the web UI.
 
-**Commands during a session:**
-- `/voice` — toggle voice input mode
-- `/stats` — show CEFR vocabulary breakdown and SRS health report
-- `quit` / `exit` / `sair` — end the session
+---
 
-**Environment variables:**
+## Environment variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `FALA_MODEL` | `gpt-4o` | LLM model to use |
-| `FALA_BASE_URL` | `https://api.openai.com/v1` | LLM API base URL |
 | `FALA_API_KEY` | `$OPENAI_API_KEY` | LLM API key |
+| `FALA_BASE_URL` | `https://api.openai.com/v1` | LLM API base URL |
+| `FALA_MODEL` | `gpt-4o` | LLM model to use |
 | `FALA_TTS` | `openai` | TTS provider (`openai` or `piper`) |
-| `FALA_TTS_VOICE` | `alloy` | TTS voice (OpenAI only) |
-| `FALA_STT_MODEL` | `base` | Whisper model size for STT |
+| `FALA_TTS_VOICE` | `alloy` | TTS voice name (OpenAI only) |
+| `FALA_STT_MODEL` | `base` | Whisper model size (`tiny`, `base`, `small`, `medium`, `large`) |
+
+---
+
+## Troubleshooting
+
+| Problem | Likely fix |
+|---------|-----------|
+| `OpenAIError: Missing credentials` | Set `OPENAI_API_KEY` or `FALA_API_KEY` |
+| `No module named pip` | Create a virtualenv: `python -m venv .venv` |
+| `ModuleNotFoundError: No module named 'piper'` | `pip install piper-tts` (only needed for `FALA_TTS=piper`) |
+| `[Piper voice download failed]` | Check your internet connection. Voice is ~63 MB from HuggingFace |
+| No sound when tutor speaks | Check speakers, volume. Try `mpv`, `ffplay`, or `aplay` — one of these must be installed |
+| `/voice` does nothing | Install Whisper: `pip install openai-whisper` |
+| Tutor speaks too fast/slow | Not yet configurable — controlled by OpenAI TTS model |
+
+---
+
+## How it works
+
+Each session follows a structured flow:
+
+1. **Status report** — see your level, words due for review
+2. **Warm-up** — retrieval practice on trouble words, new vocabulary, a grammar point
+3. **Free conversation** — natural dialogue. You steer. The tutor weaves in what was taught.
+4. **Session end** — progress compressed into a rolling summary. CEFR breakdown + SRS health shown.
+
+The tutor uses spaced repetition (SM-2 scheduler) behind the scenes. Words you struggle with come back more often; words you know well fade. Every session builds on the last.
+
+---
+
+## Features
+
+- **LLM-powered tutoring** — conversation, correction, pronunciation, difficulty — all handled by one model
+- **European Portuguese only** — no BR vocabulary or pronunciation
+- **Voice input/output** — Piper (local) or OpenAI (cloud) TTS; optional Whisper STT
+- **Gentle in-flow correction** — the tutor models the correct version naturally, never reveals the answer directly (informed by Praktika, Talkpal, and academic research)
+- **Phase-dependent scaffolding** — heavy English support at A1, mostly Portuguese by B1
+- **Pronunciation feedback** — when speaking, the tutor evaluates and targets sounds hard for English speakers (nasal vowels, lh, nh, open/closed vowels)
+- **Persistent memory** — rolling summary tracks strengths, weaknesses, grammar, and vocabulary across unlimited sessions
+- **Spaced repetition** — LLM-assessed confidence → SM-2 scheduler
+- **CEFR vocabulary breakdown** — each word mapped to A1/A2/B1/B2+ via a 50K-entry frequency list
+- **SRS health report** — mature word count, average confidence, CEFR distribution shown at session end
+- **Web prototype** — `python3 web.py` opens a chat UI in your browser
+- **56 automated tests** — unit tests for SRS logic, conversation engine, config, and CLI
+
+---
 
 ## Running tests
 
@@ -110,15 +178,18 @@ python3 fala.py
 python -m pytest tests/ -v
 ```
 
+---
+
 ## Project structure
 
 ```
 fala/
 ├── fala.py              # CLI entrypoint
 ├── config.py            # Settings and paths
-├── conversation.py      # Conversation engine (prompts, LLM calls, turn management, SRS feedback)
+├── conversation.py      # Conversation engine — prompts, LLM calls, turn management, SRS feedback
 ├── audio.py             # STT (Whisper) + TTS (Piper local / OpenAI cloud)
-├── progress.py          # Rolling summary, spaced repetition (SM-2), vocabulary tracking
+├── progress.py          # Rolling summary, SM-2 spaced repetition, vocabulary tracking, CEFR stats
+├── web.py               # Web prototype (FastAPI chat UI)
 ├── prompts/
 │   ├── system.md        # Tutor personality, correction style, pronunciation rules
 │   └── warmup.md        # Warm-up phase template with retrieval practice
@@ -140,6 +211,8 @@ fala/
     └── piper-voices/    # Downloaded Piper voice models
 ```
 
+---
+
 ## Design decisions
 
 Built from a deliberate set of choices:
@@ -152,6 +225,14 @@ Built from a deliberate set of choices:
 - **Pronunciation feedback on voice only** — the tutor only gives pronunciation advice when you speak, not when you type
 - **CEFR-graded vocabulary tracking** — every word gets a CEFR band based on a 50K-entry frequency list. `/stats` shows your vocabulary distribution and SRS health at a glance.
 - **Natural name introduction** — the tutor asks "Como te chamas?" in Portuguese as the very first interaction, making it a teaching moment
+
+---
+
+## Feedback / Issues
+
+This is an early-stage project. Bugs, rough edges, and missing features are expected. If something broke or confused you, [open an issue](https://github.com/armchairfuturist-code/FALA/issues) — every report makes the tool better.
+
+---
 
 ## License
 
