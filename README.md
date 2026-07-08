@@ -33,6 +33,8 @@ The tutor uses spaced repetition behind the scenes. Words you struggle with come
 - **Pronunciation feedback** — when speaking, the tutor evaluates your speech and gives targeted feedback on sounds hard for English speakers (nasal vowels, lh, nh, open/closed vowels)
 - **Persistent memory** — a rolling summary tracks your strengths, weaknesses, grammar progress, and vocabulary across unlimited sessions
 - **Spaced repetition** — LLM-assessed confidence scores feed an SM-2-style scheduler
+- **CEFR vocabulary breakdown** — every word is mapped to a CEFR band (A1/A2/B1/B2+) via a frequency-ranked pt-PT word list. See your progress at any time with `/stats`.
+- **SRS health report** — session end shows mature word count, average confidence, and CEFR distribution
 - **56 automated tests** — unit tests for SRS logic, conversation engine, config, and CLI smoke tests
 
 ## Setup
@@ -88,6 +90,7 @@ python3 fala.py
 
 **Commands during a session:**
 - `/voice` — toggle voice input mode
+- `/stats` — show CEFR vocabulary breakdown and SRS health report
 - `quit` / `exit` / `sair` — end the session
 
 **Environment variables:**
@@ -126,11 +129,12 @@ fala/
 │   └── test_progress.py
 ├── docs/
 │   ├── agents/          # Agent infrastructure and wayfinding
-│   ├── research/        # Research findings (TTS/STT, conversation UX)
+│   ├── research/        # Research findings (TTS/STT, conversation UX, evaluation)
 │   └── architecture.md  # Design decisions and module documentation
 └── data/                # Auto-created on first run
     ├── summary.md       # Rolling session summary
     ├── vocabulary.md    # Learned words with SRS metadata
+    ├── pt_50k.txt       # Frequency-ranked pt-PT word list (CEFR mapping)
     ├── sessions/        # Raw session logs
     ├── records/         # Learning records for graduated words
     └── piper-voices/    # Downloaded Piper voice models
@@ -146,6 +150,7 @@ Built from a deliberate set of choices:
 - **LLM-assisted spaced repetition** — the model assesses confidence per turn; SM-2 scheduler handles timing
 - **Gentle in-flow correction** — the tutor models the correct version naturally, never reveals the answer directly (informed by research on Praktika, Talkpal, and academic sources)
 - **Pronunciation feedback on voice only** — the tutor only gives pronunciation advice when you speak, not when you type
+- **CEFR-graded vocabulary tracking** — every word gets a CEFR band based on a 50K-entry frequency list. `/stats` shows your vocabulary distribution and SRS health at a glance.
 - **Natural name introduction** — the tutor asks "Como te chamas?" in Portuguese as the very first interaction, making it a teaching moment
 
 ## License
