@@ -10,7 +10,7 @@ A conversational European Portuguese (pt-PT) CLI tutor you can run daily — rel
 - **Stack**: Python 3.10+, OpenAI SDK, Rich (CLI), Whisper (local STT), OpenAI TTS
 - **Structure**: `fala.py` (entrypoint) → `conversation.py` (LLM orchestration) → `progress.py` (SRS + persistence) → `audio.py` (STT/TTS pipeline)
 - **Skills to consult**: `domain-modeling`, `grilling`, `implement`, `prototype`, `code-review`
-- **Standing**: Bootstrap phase complete (9 closed tickets). Tickets graduate from Not yet specified.
+- **Standing**: 11 tickets closed. Tickets graduate from Not yet specified.
 - **Execution mode**: This effort overrides wayfinder's "plan, don't do" default — tickets here produce working code, not just decisions. The destination is a working tool, so each ticket either sharpens a decision or ships working features toward it.
 - **Tracker**: Local-markdown (`docs/agents/tickets/`). Tickets are claimed by setting the `assigned_to` field in frontmatter. Labels: `wayfinder:<type>` only.
 - **Git**: Alex Myers <alex@thearmchairfuturist.com>
@@ -29,6 +29,7 @@ A conversational European Portuguese (pt-PT) CLI tutor you can run daily — rel
 - [Add Piper TTS](tickets/008-add-piper-tts.md) — Piper TTS engine added to `audio.py`; `FALA_TTS=piper` env var switches to local tugão pt-PT voice; auto-downloads from HuggingFace; banner shows active provider
 - [Review conversation prompts](tickets/009-review-conversation-prompts.md) — Researched Praktika, Talkpal, and academic sources; rewrote `system.md` and `warmup.md` with gentle in-flow correction, no-direct-answer guardrails, conditional pronunciation feedback, and natural name introduction
 - [Research evaluation/progress measurement](tickets/010-research-evaluation.md) — Surveyed Duolingo, Anki, LingQ, CEFR vocab; recommended CEFR breakdown + SRS health report + `/stats` command (ticket #011 implements)
+- [CEFR vocabulary breakdown](tickets/011-cefr-vocab-breakdown.md) — Implemented `vocabulary_report()` via FrequencyWords pt_50k.txt; `/stats` command mid-session; CEFR breakdown + SRS stats shown at session end
 
 ## Not yet specified
 
