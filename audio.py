@@ -50,8 +50,12 @@ def _piper_text_to_speech(text: str) -> Path | None:
 
     try:
         from piper import PiperVoice
+        from piper.config import SynthesisConfig
 
         voice = PiperVoice.load(str(PIPER_MODEL_PATH), str(PIPER_CONFIG_PATH))
+
+        # Slower speech for beginners (length_scale 1.0 = normal, >1 = slower)
+        syn_config = SynthesisConfig(length_scale=1.15)
 
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp_path = Path(tmp.name)
@@ -60,7 +64,7 @@ def _piper_text_to_speech(text: str) -> Path | None:
         import wave
 
         with wave.open(str(tmp_path), "wb") as wav_file:
-            voice.synthesize_wav(text, wav_file)
+            voice.synthesize_wav(text, wav_file, syn_config=syn_config)
 
         return tmp_path
 

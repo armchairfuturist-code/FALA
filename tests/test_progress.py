@@ -252,7 +252,8 @@ class TestSummary:
         config.SUMMARY_PATH = tmp_path / "summary.md"
         p = _reload_progress()
         summary = p.load_summary()
-        assert "Current level: A1" in summary
+        assert "Current level: A0" in summary
+        assert "Learner name: (not yet known)" in summary
         assert "Sessions completed: 0" in summary
         config.SUMMARY_PATH = old
 

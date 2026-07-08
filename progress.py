@@ -112,7 +112,8 @@ def save_summary(text: str):
 
 def _default_summary() -> str:
     return """# Learner Profile
-- Current level: A1
+- Learner name: (not yet known)
+- Current level: A0
 - Sessions completed: 0
 - Total vocabulary: 0 words
 - Strengths: (none yet)

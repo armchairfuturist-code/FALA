@@ -48,10 +48,10 @@ class ConversationEngine:
     def _extract_level(self) -> str:
         for line in self.summary.splitlines():
             if "current level" in line.lower():
-                for level in ["A1", "A2", "B1"]:
+                for level in ["A0", "A1", "A2", "B1"]:
                     if level in line:
                         return level
-        return "A1"
+        return "A0"
 
     def get_status_report(self) -> str:
         level = self._extract_level()
@@ -205,7 +205,8 @@ class ConversationEngine:
                     "2. Adds this session to Recent Sessions (keep only last 5)\n"
                     "3. Updates strengths/weaknesses based on performance\n"
                     "4. Updates grammar progress if applicable\n"
-                    "5. Sets the correct current level (A1/A2/B1)\n"
+                    "5. Sets the correct current level (A0/A1/A2/B1)\n"
+                    "6. If the learner gave their name, set the Learner name field\n"
                     "Keep the same markdown format. Be concise."
                 ),
             },

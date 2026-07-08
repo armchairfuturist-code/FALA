@@ -39,9 +39,9 @@ class TestExtractLevel:
                         engine = ConversationEngine()
         return engine
 
-    def test_default_level_a1(self):
+    def test_default_level(self):
         engine = self._make_engine("No level info here")
-        assert engine._extract_level() == "A1"
+        assert engine._extract_level() == "A0"
 
     def test_parses_a1(self):
         engine = self._make_engine("- Current level: A1\n- Sessions: 0")
@@ -113,7 +113,7 @@ class TestBuildSystemPrompt:
 
         assert engine.messages[0]["role"] == "system"
         content = engine.messages[0]["content"]
-        assert "Level: A1" in content
+        assert "Level: A0" in content
         assert "Summary: test summary" in content
         assert "Vocab: (none)" in content
 
