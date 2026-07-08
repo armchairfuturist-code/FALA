@@ -2,7 +2,7 @@
 type: task
 labels: [wayfinder:task]
 blocked_by: [010-research-evaluation]
-assigned_to: ""
+assigned_to: alex
 ---
 
 ## Question

@@ -20,6 +20,7 @@ from progress import (
     save_vocabulary,
     save_learning_record,
     update_vocab_after_review,
+    vocabulary_report,
 )
 
 
@@ -71,6 +72,25 @@ class ConversationEngine:
             parts.append(f"Words due for review: {len(review)}")
         parts.append(f"Session started: {self.session_start.strftime('%Y-%m-%d %H:%M')}")
         return " | ".join(parts)
+
+    def get_stats(self) -> str:
+        """Return CEFR breakdown + SRS stats for mid-session /stats command."""
+        report = vocabulary_report(self.vocabulary)
+        total = report["total_words"]
+        if total == 0:
+            return "No vocabulary yet. Start a session to build your word bank!"
+
+        cefr_parts = " · ".join(
+            f"{band}: {count}"
+            for band, count in sorted(report["cefr"].items())
+        )
+        lines = [
+            f"Vocabulary: {total} words ({cefr_parts})",
+            f"Mature words (≥0.7): {report['mature_words']}",
+            f"Avg confidence: {report['average_confidence']:.0%}",
+            f"Due for review: {report['due_for_review']}",
+        ]
+        return "\n".join(lines)
 
     def start_warmup(self) -> str:
         template = (PROMPTS_DIR / "warmup.md").read_text()
@@ -231,4 +251,20 @@ class ConversationEngine:
             )
             save_learning_record(title, content)
 
-        return f"Session saved. {word_count} new words added, {len(new_graduated)} words learned. See you next time!"
+        # Build vocab/SRS report
+        report = vocabulary_report(self.vocabulary)
+        cefr_parts = " · ".join(
+            f"{band}: {count}"
+            for band, count in sorted(report["cefr"].items())
+        ) if report["cefr"] else "(none)"
+        stats_line = (
+            f"Vocabulary: {report['total_words']} words ({cefr_parts})"
+            f" | Mature: {report['mature_words']}"
+            f" | Avg confidence: {report['average_confidence']:.0%}"
+        )
+
+        return (
+            f"Session saved. {word_count} new words added, "
+            f"{len(new_graduated)} words learned.\n{stats_line}\n"
+            "See you next time!"
+        )

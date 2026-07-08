@@ -75,6 +75,11 @@ def main():
             console.print(f"[dim]Voice input: {mode}[/dim]")
             continue
 
+        if stripped == "/stats":
+            stats = engine.get_stats()
+            console.print(Panel(stats, title="[bold]Stats[/bold]", border_style="green"))
+            continue
+
         if not stripped:
             continue
 

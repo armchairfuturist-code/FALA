@@ -1,6 +1,103 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from config import GUARDRAILS, RECORDS_DIR, SUMMARY_PATH, VOCABULARY_PATH
+from config import DATA_DIR, GUARDRAILS, RECORDS_DIR, SUMMARY_PATH, VOCABULARY_PATH
+
+
+# ---------------------------------------------------------------------------
+# CEFR frequency word list
+# ---------------------------------------------------------------------------
+
+_CEFR_BANDS = {
+    "A1": 500,
+    "A2": 2000,
+    "B1": 5000,
+}
+_frequency_words: dict[str, int] | None = None  # word -> rank (0-indexed)
+
+
+def _load_frequency_words() -> dict[str, int]:
+    """Load pt_50k.txt and return word -> rank mapping."""
+    global _frequency_words
+    if _frequency_words is not None:
+        return _frequency_words
+    path = DATA_DIR / "pt_50k.txt"
+    if not path.exists():
+        _frequency_words = {}
+        return _frequency_words
+    result: dict[str, int] = {}
+    text = path.read_text(encoding="utf-8")
+    for i, line in enumerate(text.strip().splitlines()):
+        word = line.split(" ", 1)[0] if " " in line else line.strip()
+        word = word.strip().lower()
+        if word:
+            result[word] = i
+    _frequency_words = result
+    return result
+
+
+def _cefr_band(rank: int) -> str:
+    """Return the CEFR band for a given frequency rank."""
+    for band, threshold in [("A1", 500), ("A2", 2000), ("B1", 5000)]:
+        if rank < threshold:
+            return band
+    return "B2+"
+
+
+def vocabulary_report(entries: list[dict]) -> dict:
+    """Return a report with CEFR breakdown and SRS stats.
+
+    Returns:
+        dict with keys:
+        - total_words: int
+        - cefr: dict[str, int]  # band -> count
+        - mature_words: int  # confidence >= 0.7
+        - average_confidence: float
+        - due_for_review: int
+    """
+    freqs = _load_frequency_words()
+
+    cefr_counts: dict[str, int] = {}
+    mature = 0
+    total_conf = 0.0
+    due = 0
+
+    for e in entries:
+        word = e.get("word", "").lower()
+        confidence = e.get("confidence", 0.0)
+        needs_review = e.get("needs_review", True)
+
+        # CEFR band
+        rank = freqs.get(word)
+        if rank is not None:
+            band = _cefr_band(rank)
+        else:
+            band = "B2+"  # not in top 50k = uncommon
+        cefr_counts[band] = cefr_counts.get(band, 0) + 1
+
+        # SRS stats
+        if confidence >= 0.7:
+            mature += 1
+        total_conf += confidence
+        if needs_review:
+            due += 1
+
+    if not entries:
+        return {
+            "total_words": 0,
+            "cefr": {},
+            "mature_words": 0,
+            "average_confidence": 0.0,
+            "due_for_review": 0,
+        }
+
+    return {
+        "total_words": len(entries),
+        "cefr": cefr_counts,
+        "mature_words": mature,
+        "average_confidence": total_conf / len(entries),
+        "due_for_review": due,
+    }
 
 
 def load_summary() -> str:
