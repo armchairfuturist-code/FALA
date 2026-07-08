@@ -2,7 +2,7 @@
 
 ## Destination
 
-A conversational European Portuguese (pt-PT) CLI tutor you can run daily — reliable, pleasant to use, and effective for going from A1 to B1. All 6 infrastructure/SRS tickets are closed; remaining work sharpens the tutor itself.
+A conversational European Portuguese (pt-PT) CLI tutor you can run daily — reliable, pleasant to use, and effective for going from A1 to B1. All 12 tickets resolved; the route from start to destination is clear.
 
 ## Notes
 
@@ -10,7 +10,7 @@ A conversational European Portuguese (pt-PT) CLI tutor you can run daily — rel
 - **Stack**: Python 3.10+, OpenAI SDK, Rich (CLI), Whisper (local STT), OpenAI TTS
 - **Structure**: `fala.py` (entrypoint) → `conversation.py` (LLM orchestration) → `progress.py` (SRS + persistence) → `audio.py` (STT/TTS pipeline)
 - **Skills to consult**: `domain-modeling`, `grilling`, `implement`, `prototype`, `code-review`
-- **Standing**: 11 closed, 1 open (ticket #012). Tickets graduate from Not yet specified.
+- **Standing**: 12 tickets closed. Map complete — the route to the destination is clear.
 - **Execution mode**: This effort overrides wayfinder's "plan, don't do" default — tickets here produce working code, not just decisions. The destination is a working tool, so each ticket either sharpens a decision or ships working features toward it.
 - **Tracker**: Local-markdown (`docs/agents/tickets/`). Tickets are claimed by setting the `assigned_to` field in frontmatter. Labels: `wayfinder:<type>` only.
 - **Git**: Alex Myers <alex@thearmchairfuturist.com>
@@ -30,6 +30,7 @@ A conversational European Portuguese (pt-PT) CLI tutor you can run daily — rel
 - [Review conversation prompts](tickets/009-review-conversation-prompts.md) — Researched Praktika, Talkpal, and academic sources; rewrote `system.md` and `warmup.md` with gentle in-flow correction, no-direct-answer guardrails, conditional pronunciation feedback, and natural name introduction
 - [Research evaluation/progress measurement](tickets/010-research-evaluation.md) — Surveyed Duolingo, Anki, LingQ, CEFR vocab; recommended CEFR breakdown + SRS health report + `/stats` command (ticket #011 implements)
 - [CEFR vocabulary breakdown](tickets/011-cefr-vocab-breakdown.md) — Implemented `vocabulary_report()` via FrequencyWords pt_50k.txt; `/stats` command mid-session; CEFR breakdown + SRS stats shown at session end
+- [Prototype web port](tickets/012-prototype-web-port.md) — FastAPI chat UI (`web.py`) wrapping ConversationEngine; single-page HTML with `/start`, `/message`, `/stats`, `/quit` endpoints; runs on `http://127.0.0.1:8080`
 
 ## Not yet specified
 
