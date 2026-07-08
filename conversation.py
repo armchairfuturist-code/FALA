@@ -33,6 +33,7 @@ class ConversationEngine:
         self.session_log: list[str] = []
         self.new_words: list[dict] = []
         self.session_start = datetime.now()
+        self._warmup_done = False
         self._build_system_prompt()
 
     def _build_system_prompt(self):
@@ -102,6 +103,14 @@ class ConversationEngine:
         response = self._call_llm()
         self._log("system", "(warm-up started)")
         self._log("assistant", response)
+        # Replace the warmup template with a concise context marker so the LLM
+        # doesn't re-read the entire template on every subsequent turn
+        if len(self.messages) >= 2:
+            self.messages[1] = {
+                "role": "system",
+                "content": "[The warm-up phase is complete. You greeted the learner and started the conversation. Now continue naturally in response to their messages.]",
+            }
+        self._warmup_done = True
         return response
 
     def user_message(self, text: str, is_voice: bool = False) -> str:
