@@ -114,6 +114,14 @@ class ConversationEngine:
         return response
 
     def user_message(self, text: str, is_voice: bool = False) -> str:
+        # First message after warmup: frame it as a response to the tutor's question
+        if self._warmup_done:
+            self.messages.append({
+                "role": "system",
+                "content": "[The learner is now answering your question above. Continue naturally — if they translated correctly, affirm it. If wrong, guide them.]",
+            })
+            self._warmup_done = False
+
         prefix = "[voice] " if is_voice else ""
         self.messages.append({"role": "user", "content": f"{prefix}{text}"})
         self._log("user", f"{prefix}{text}")

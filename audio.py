@@ -55,7 +55,7 @@ def _piper_text_to_speech(text: str) -> Path | None:
         voice = PiperVoice.load(str(PIPER_MODEL_PATH), str(PIPER_CONFIG_PATH))
 
         # Slower speech for beginners (length_scale 1.0 = normal, >1 = slower)
-        syn_config = SynthesisConfig(length_scale=1.35)
+        syn_config = SynthesisConfig(length_scale=1.5)
 
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp_path = Path(tmp.name)
