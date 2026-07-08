@@ -21,8 +21,11 @@ source .venv/bin/activate  # Linux/Mac
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Set your API key (required — the app needs an LLM to work)
-export OPENAI_API_KEY=sk-...  # or FALA_API_KEY if using a different provider
+# 4. Get a free API key from Groq (https://console.groq.com/keys)
+#    No credit card needed, instant signup, generous free tier.
+export FALA_BASE_URL=https://api.groq.com/openai/v1
+export FALA_API_KEY=gsk_your-key-here
+export FALA_MODEL=llama-3.3-70b-versatile
 
 # 5. Run
 python3 fala.py
@@ -39,8 +42,26 @@ You'll see: the tutor greets you, introduces itself, and starts a warm-up. For y
 
 ## What you need to know as a beta tester
 
-### You need an API key
-The app requires an LLM provider. OpenAI is the default, but any OpenAI-compatible API works (Groq, Together, local Ollama, etc.). Set `FALA_BASE_URL` and `FALA_API_KEY` if not using OpenAI.
+### You need an API key — here's a free one
+
+The app needs an LLM provider to run. The simplest free option is **Groq** — no credit card, instant signup, generous free tier, fully OpenAI-compatible.
+
+```bash
+# 1. Go to https://console.groq.com/keys
+# 2. Sign up (free, no credit card)
+# 3. Create an API key (gsk_...)
+# 4. Set these:
+export FALA_BASE_URL=https://api.groq.com/openai/v1
+export FALA_API_KEY=gsk_your-key-here
+export FALA_MODEL=llama-3.3-70b-versatile
+```
+
+**OpenAI** also works (free $5 credits on signup, requires credit card):
+```bash
+export OPENAI_API_KEY=sk-...
+```
+
+**Any OpenAI-compatible API** works — Groq, Together, Ollama (local), etc. Just set `FALA_BASE_URL`, `FALA_API_KEY`, and optionally `FALA_MODEL`.
 
 ### Audio
 - **TTS (tutor speaks)**: enabled by default via OpenAI TTS (cloud). For offline/free TTS, install Piper (`pip install piper-tts` then `export FALA_TTS=piper`)
@@ -74,14 +95,22 @@ pip install -r requirements.txt
 ```
 
 ### LLM provider (required)
-The app needs an LLM to run. Pick one:
 
-**OpenAI (default):**
+Pick one:
+
+**Groq (free, no credit card, recommended for testing):**
+```bash
+export FALA_BASE_URL=https://api.groq.com/openai/v1
+export FALA_API_KEY=gsk_your-key-here
+export FALA_MODEL=llama-3.3-70b-versatile
+```
+
+**OpenAI (free $5 credits on signup, requires credit card):**
 ```bash
 export OPENAI_API_KEY=sk-...
 ```
 
-**Other provider (Groq, Together, Ollama, etc.):**
+**Other provider (Together, Ollama locally, etc.):**
 ```bash
 export FALA_BASE_URL=https://your-provider.com/v1
 export FALA_API_KEY=your-key
@@ -132,7 +161,7 @@ Open http://127.0.0.1:8080 in your browser. Chat only, no voice in the web UI.
 
 | Problem | Likely fix |
 |---------|-----------|
-| `OpenAIError: Missing credentials` | Set `OPENAI_API_KEY` or `FALA_API_KEY` |
+| `OpenAIError: Missing credentials` | Set `FALA_API_KEY` with a Groq key (free, see Quick Start) or `OPENAI_API_KEY` |
 | `No module named pip` | Create a virtualenv: `python -m venv .venv` |
 | `ModuleNotFoundError: No module named 'piper'` | `pip install piper-tts` (only needed for `FALA_TTS=piper`) |
 | `[Piper voice download failed]` | Check your internet connection. Voice is ~63 MB from HuggingFace |
