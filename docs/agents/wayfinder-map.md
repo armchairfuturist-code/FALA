@@ -10,7 +10,7 @@ A conversational European Portuguese (pt-PT) CLI tutor you can run daily — rel
 - **Stack**: Python 3.10+, OpenAI SDK, Rich (CLI), Whisper (local STT), OpenAI TTS
 - **Structure**: `fala.py` (entrypoint) → `conversation.py` (LLM orchestration) → `progress.py` (SRS + persistence) → `audio.py` (STT/TTS pipeline)
 - **Skills to consult**: `domain-modeling`, `grilling`, `implement`, `prototype`, `code-review`
-- **Standing**: 11 tickets closed. Tickets graduate from Not yet specified.
+- **Standing**: 11 closed, 1 open (ticket #012). Tickets graduate from Not yet specified.
 - **Execution mode**: This effort overrides wayfinder's "plan, don't do" default — tickets here produce working code, not just decisions. The destination is a working tool, so each ticket either sharpens a decision or ships working features toward it.
 - **Tracker**: Local-markdown (`docs/agents/tickets/`). Tickets are claimed by setting the `assigned_to` field in frontmatter. Labels: `wayfinder:<type>` only.
 - **Git**: Alex Myers <alex@thearmchairfuturist.com>
@@ -33,7 +33,7 @@ A conversational European Portuguese (pt-PT) CLI tutor you can run daily — rel
 
 ## Not yet specified
 
-- **Web/mobile port** — a known direction but too vague to ticket; might be worth a prototype to assess feasibility.
+*(none)*
 
 ## Out of scope
 
