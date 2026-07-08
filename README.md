@@ -33,6 +33,12 @@ python3 fala.py
 
 You'll see: the tutor greets you, introduces itself, and starts a warm-up. For your very first session, it will ask **"Como te chamas?"** in Portuguese — that's intentional, it's a teaching moment. Type your name in Portuguese and the conversation flows from there.
 
+> **Two independent parts:**
+> - **🧠 Tutor's brain** = LLM (required). Needs the API key above. Groq is free.
+> - **🗣️ Tutor's voice** = TTS (optional). Defaults to OpenAI cloud (needs OpenAI key, fails if you're using Groq). **Fix:** install Piper for free offline voice — `pip install piper-tts && export FALA_TTS=piper`.
+>
+> You can mix and match: Groq for brain + Piper for voice = 100% free.
+
 **Commands during a session:**
 - `/voice` — toggle voice input mode (speak instead of type)
 - `/stats` — show your vocabulary breakdown by CEFR level and SRS health
@@ -42,9 +48,16 @@ You'll see: the tutor greets you, introduces itself, and starts a warm-up. For y
 
 ## What you need to know as a beta tester
 
-### You need an API key — here's a free one
+### You need an API key for the brain — voice is optional
 
-The app needs an LLM provider to run. The simplest free option is **Groq** — no credit card, instant signup, generous free tier, fully OpenAI-compatible.
+The app has **two independent parts**:
+
+| Part | What | Required? | Free option |
+|------|------|-----------|-------------|
+| 🧠 **Brain** (LLM) | Generates conversation, corrections, feedback | ✅ Yes | Groq (free key, no credit card) |
+| 🗣️ **Voice** (TTS) | Reads the tutor's responses aloud | ❌ No | Piper (free, local, no key needed) |
+
+**For the brain (required):** Get a free Groq API key:
 
 ```bash
 # 1. Go to https://console.groq.com/keys
@@ -56,12 +69,19 @@ export FALA_API_KEY=gsk_your-key-here
 export FALA_MODEL=llama-3.3-70b-versatile
 ```
 
-**OpenAI** also works (free $5 credits on signup, requires credit card):
+**OpenAI** also works for the brain (free $5 credits on signup, requires credit card):
 ```bash
 export OPENAI_API_KEY=sk-...
 ```
 
-**Any OpenAI-compatible API** works — Groq, Together, Ollama (local), etc. Just set `FALA_BASE_URL`, `FALA_API_KEY`, and optionally `FALA_MODEL`.
+**For the voice (optional):** The default TTS is OpenAI cloud (needs an OpenAI key, separate from Groq). If you're using Groq for the brain, the TTS will fail — that's expected. Fix it by using **Piper** for free local voice:
+
+```bash
+pip install piper-tts
+export FALA_TTS=piper
+```
+
+**Best free setup:** Groq (🧠 brain) + Piper (🗣️ voice) = $0, no credit card.
 
 ### Audio
 - **TTS (tutor speaks)**: enabled by default via OpenAI TTS (cloud). For offline/free TTS, install Piper (`pip install piper-tts` then `export FALA_TTS=piper`)
@@ -165,7 +185,8 @@ Open http://127.0.0.1:8080 in your browser. Chat only, no voice in the web UI.
 | `No module named pip` | Create a virtualenv: `python -m venv .venv` |
 | `ModuleNotFoundError: No module named 'piper'` | `pip install piper-tts` (only needed for `FALA_TTS=piper`) |
 | `[Piper voice download failed]` | Check your internet connection. Voice is ~63 MB from HuggingFace |
-| No sound when tutor speaks | Check speakers, volume. Try `mpv`, `ffplay`, or `aplay` — one of these must be installed |
+| `The model 'tts-1' does not exist` | TTS is trying to use Groq's endpoint (no TTS on Groq). Fix: `pip install piper-tts && export FALA_TTS=piper` |
+| No sound when tutor speaks | Check speakers, volume. Try `mpv`, `ffplay`, or `aplay` — one must be installed |
 | `/voice` does nothing | Install Whisper: `pip install openai-whisper` |
 | Tutor speaks too fast/slow | Not yet configurable — controlled by OpenAI TTS model |
 
