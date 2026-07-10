@@ -2,7 +2,7 @@
 
 A conversational European Portuguese (pt-PT) tutor for English speakers. No gamification, no streaks, no cartoon owl — just you and a patient tutor having a conversation.
 
-**Target proficiency:** A1 → B1 (survive-in-Portugal level)
+**Target proficiency:** A0 → B1 (survive-in-Portugal level)
 
 ---
 
@@ -34,11 +34,11 @@ python3 fala.py
 
 You'll see: the tutor greets you, introduces itself, and starts a warm-up. For your very first session, it will ask **"Como te chamas?"** in Portuguese — that's intentional, it's a teaching moment. Type your name in Portuguese and the conversation flows from there.
 
-> **Two independent parts:**
-> - **🧠 Tutor's brain** = LLM (required). Needs the API key above. Groq is free.
-> - **🗣️ Tutor's voice** = TTS (optional). Defaults to OpenAI cloud (needs OpenAI key, fails if you're using Groq). **Fix:** install Piper for free offline voice — `pip install piper-tts && export FALA_TTS=piper`.
+> **Two independent parts — both covered by Quick Start:**
+> - **🧠 Tutor's brain** = LLM (required). Groq is free. You just paste the key.
+> - **🗣️ Tutor's voice** = TTS (optional). Piper is free, `.env.example` already sets it up.
 >
-> You can mix and match: Groq for brain + Piper for voice = 100% free.
+> Groq for brain + Piper for voice = $0, no credit card.
 
 **Commands during a session:**
 - `/voice` — toggle voice input mode (speak instead of type)
@@ -59,46 +59,37 @@ The app has **two independent parts**:
 | 🗣️ **Voice** (TTS) | Reads the tutor's responses aloud | ❌ No | Piper (free, local, no key needed) |
 
 **For the brain (required):** Get a free Groq API key:
+1. Go to https://console.groq.com/keys
+2. Sign up (free, no credit card)
+3. Create an API key (looks like `gsk_...`)
+4. Edit your `.env` file — replace `gsk_your-key-here` with your key
+The `.env` file is auto-loaded at startup — no `export` or `source` needed.
 
-```bash
-# 1. Go to https://console.groq.com/keys
-# 2. Sign up (free, no credit card)
-# 3. Create an API key (gsk_...)
-# 4. Set these:
-export FALA_BASE_URL=https://api.groq.com/openai/v1
-export FALA_API_KEY=gsk_your-key-here
-export FALA_MODEL=llama-3.3-70b-versatile
-```
+**OpenAI** also works (free $5 credits, requires credit card). Replace the `FALA_BASE_URL`, `FALA_API_KEY`, and `FALA_MODEL` lines in your `.env` file.
 
-**OpenAI** also works for the brain (free $5 credits on signup, requires credit card):
-```bash
-export OPENAI_API_KEY=sk-...
-```
-
-**For the voice (optional):** The default TTS is OpenAI cloud (needs an OpenAI key, separate from Groq). If you're using Groq for the brain, the TTS will fail — that's expected. Fix it by using **Piper** for free local voice:
+**For the voice (optional):** The `.env.example` already sets `FALA_TTS=piper` (free local voice). Just install it:
 
 ```bash
 pip install piper-tts
-export FALA_TTS=piper
 ```
 
 **Best free setup:** Groq (🧠 brain) + Piper (🗣️ voice) = $0, no credit card.
 
 ### Audio
-- **TTS (tutor speaks)**: enabled by default via OpenAI TTS (cloud). For offline/free TTS, install Piper (`pip install piper-tts` then `export FALA_TTS=piper`)
+- **TTS (tutor speaks)**: Piper (local, free) by default — `.env.example` sets `FALA_TTS=piper`. Just `pip install piper-tts`.
 - **STT (you speak)**: optional. Install `pip install openai-whisper` then use `/voice` during a session
-- **No audio at all?**: You can still type-only. The app works fine without audio — just ignore the TTS errors.
+- **No audio at all?**: Type-only works — just ignore any audio errors
 
 ### First session
-- The tutor is warm and patient. A1 means heavy English support; B1 means mostly Portuguese.
-- Say anything — make mistakes. The tutor is designed to correct you gently, not to judge.
-- Sessions are saved automatically. You can stop anytime with `quit` and pick up later.
+- The tutor uses a **comprehension-first** method: says a pt-PT sentence → you translate to English → it affirms and repeats
+- A0 level = no grammar, no open-ended questions, just listening and understanding
+- Sessions are saved automatically. Stop anytime with `quit` and pick up later
 
 ### Known limitations
-- The tutor's voice is OpenAI's TTS (English-optimised) by default. Piper (tugão) is free and local but quality is medium.
-- Pronunciation feedback only works when you **speak** (voice input), not when you type.
-- No multi-user support — this is a personal tool, single-user file-based.
-- The web prototype (`python3 web.py`) is minimal — chat only, no voice.
+- Piper (tugão) is the only free local pt-PT voice — quality is medium but serviceable
+- Pronunciation feedback only works when you **speak** (voice input), not when you type
+- No multi-user support — this is a personal tool, single-user file-based
+- The web prototype (`python3 web.py`) is minimal — chat only, no voice
 
 ---
 
@@ -117,36 +108,23 @@ pip install -r requirements.txt
 
 ### LLM provider (required)
 
-Pick one:
+Edit `.env` (copy from `.env.example` first):
 
-**Groq (free, no credit card, recommended for testing):**
-```bash
-export FALA_BASE_URL=https://api.groq.com/openai/v1
-export FALA_API_KEY=gsk_your-key-here
-export FALA_MODEL=llama-3.3-70b-versatile
-```
-
-**OpenAI (free $5 credits on signup, requires credit card):**
-```bash
-export OPENAI_API_KEY=sk-...
-```
-
-**Other provider (Together, Ollama locally, etc.):**
-```bash
-export FALA_BASE_URL=https://your-provider.com/v1
-export FALA_API_KEY=your-key
-export FALA_MODEL=your-model
-```
+| Provider | Cost | .env setup |
+|----------|------|-----------|
+| **Groq** (recommended) | Free, no credit card | Fill in `FALA_API_KEY` with a `gsk_...` key |
+| **OpenAI** | $5 free credits, needs credit card | Fill in `OPENAI_API_KEY` with a `sk-...` key |
+| **Other** (Together, Ollama, etc.) | Varies | Set `FALA_BASE_URL`, `FALA_API_KEY`, `FALA_MODEL` |
 
 ### TTS (tutor voice)
 
 | Option | How | Quality | Cost | Offline |
 |--------|-----|---------|------|---------|
-| **OpenAI** (default) | Nothing to install — uses `OPENAI_API_KEY` | Good, but English-optimised | Per-character billing | ❌ |
-| **Piper** (local) | `pip install piper-tts` then `export FALA_TTS=piper` | Medium (dedicated pt-PT voice) | Free | ✅ |
-| **None** | Ignore TTS errors — type-only works fine | — | — | ✅ |
+| **Piper** (default in .env.example) | `pip install piper-tts` | Medium (dedicated pt-PT) | Free | ✅ |
+| **OpenAI** (cloud) | Set `FALA_TTS=openai` in `.env` | Good (English-optimised) | Per-character | ❌ |
+| **None** | Ignore audio errors | — | — | ✅ |
 
-The Piper voice model auto-downloads (~63 MB) on first use.
+The Piper voice auto-downloads (~63 MB) on first use.
 
 ### STT (your voice input)
 Optional. Install Whisper:
@@ -156,25 +134,33 @@ pip install openai-whisper
 Then use `/voice` during a session to switch to voice input mode.
 
 ### Web prototype
-A minimal web UI is available:
 ```bash
 pip install fastapi uvicorn python-multipart
 python3 web.py
 ```
-Open http://127.0.0.1:8080 in your browser. Chat only, no voice in the web UI.
+Open http://127.0.0.1:8080
 
 ---
 
 ## Environment variables
+
+All set in `.env` (auto-loaded). Copy `.env.example` and edit:
+
+```ini
+FALA_BASE_URL=https://api.groq.com/openai/v1
+FALA_API_KEY=gsk_your-key-here
+FALA_MODEL=llama-3.3-70b-versatile
+FALA_TTS=piper
+```
 
 | Variable | Default | Description |
 |---|---|---|
 | `FALA_API_KEY` | `$OPENAI_API_KEY` | LLM API key |
 | `FALA_BASE_URL` | `https://api.openai.com/v1` | LLM API base URL |
 | `FALA_MODEL` | `gpt-4o` | LLM model to use |
-| `FALA_TTS` | `openai` | TTS provider (`openai` or `piper`) |
-| `FALA_TTS_VOICE` | `alloy` | TTS voice name (OpenAI only) |
-| `FALA_STT_MODEL` | `base` | Whisper model size (`tiny`, `base`, `small`, `medium`, `large`) |
+| `FALA_TTS` | `openai` | `openai` or `piper` |
+| `FALA_TTS_VOICE` | `alloy` | Voice name (OpenAI only) |
+| `FALA_STT_MODEL` | `base` | Whisper model size |
 
 ---
 
@@ -182,44 +168,39 @@ Open http://127.0.0.1:8080 in your browser. Chat only, no voice in the web UI.
 
 | Problem | Likely fix |
 |---------|-----------|
-| `OpenAIError: Missing credentials` | Set `FALA_API_KEY` with a Groq key (free, see Quick Start) or `OPENAI_API_KEY` |
+| `OpenAIError: Missing credentials` | Edit `.env` — set `FALA_API_KEY` with a Groq key |
 | `No module named pip` | Create a virtualenv: `python -m venv .venv` |
-| `ModuleNotFoundError: No module named 'piper'` | `pip install piper-tts` (only needed for `FALA_TTS=piper`) |
-| `[Piper voice download failed]` | Check your internet connection. Voice is ~63 MB from HuggingFace |
-| `The model 'tts-1' does not exist` | TTS is trying to use Groq's endpoint (no TTS on Groq). Fix: `pip install piper-tts && export FALA_TTS=piper` |
-| No sound when tutor speaks | Check speakers, volume. Try `mpv`, `ffplay`, or `aplay` — one must be installed |
+| `ModuleNotFoundError: No module named 'piper'` | `pip install piper-tts` |
+| `[Piper voice download failed]` | Check internet. Voice is ~63 MB from HuggingFace |
+| `The model 'tts-1' does not exist` | TTS trying to use Groq endpoint. Install Piper: `pip install piper-tts` |
+| No sound when tutor speaks | Need `mpv`, `ffplay`, or `aplay` installed |
 | `/voice` does nothing | Install Whisper: `pip install openai-whisper` |
-| Tutor speaks too fast/slow | Not yet configurable — controlled by OpenAI TTS model |
 
 ---
 
 ## How it works
 
-Each session follows a structured flow:
-
 1. **Status report** — see your level, words due for review
-2. **Warm-up** — retrieval practice on trouble words, new vocabulary, a grammar point
-3. **Free conversation** — natural dialogue. You steer. The tutor weaves in what was taught.
-4. **Session end** — progress compressed into a rolling summary. CEFR breakdown + SRS health shown.
+2. **Warm-up** — scenario-based sentence practice (café, restaurant, directions...)
+3. **Free conversation** — natural dialogue
+4. **Session end** — CEFR vocabulary breakdown + SRS health shown
 
-The tutor uses spaced repetition (SM-2 scheduler) behind the scenes. Words you struggle with come back more often; words you know well fade. Every session builds on the last.
+Spaced repetition (SM-2) runs behind the scenes.
 
 ---
 
 ## Features
 
-- **LLM-powered tutoring** — conversation, correction, pronunciation, difficulty — all handled by one model
-- **European Portuguese only** — no BR vocabulary or pronunciation
+- **LLM-powered tutoring** — conversation, correction, pronunciation — one model
+- **European Portuguese only** — no BR vocabulary/pronunciation
 - **Voice input/output** — Piper (local) or OpenAI (cloud) TTS; optional Whisper STT
-- **Gentle in-flow correction** — the tutor models the correct version naturally, never reveals the answer directly (informed by Praktika, Talkpal, and academic research)
-- **Phase-dependent scaffolding** — heavy English support at A1, mostly Portuguese by B1
-- **Pronunciation feedback** — when speaking, the tutor evaluates and targets sounds hard for English speakers (nasal vowels, lh, nh, open/closed vowels)
-- **Persistent memory** — rolling summary tracks strengths, weaknesses, grammar, and vocabulary across unlimited sessions
-- **Spaced repetition** — LLM-assessed confidence → SM-2 scheduler
-- **CEFR vocabulary breakdown** — each word mapped to A1/A2/B1/B2+ via a 50K-entry frequency list
-- **SRS health report** — mature word count, average confidence, CEFR distribution shown at session end
-- **Web prototype** — `python3 web.py` opens a chat UI in your browser
-- **56 automated tests** — unit tests for SRS logic, conversation engine, config, and CLI
+- **Comprehension-first method** — hear → translate → repeat. Words always in context sentences
+- **Gentle in-flow correction** — never reveals the answer directly (research-backed)
+- **Persistent memory** — rolling summary across unlimited sessions
+- **CEFR vocabulary breakdown** — A1/A2/B1/B2+ bands via frequency list
+- **SRS health report** — stats at session end and via `/stats`
+- **Web prototype** — `python3 web.py` at http://127.0.0.1:8080
+- **56 automated tests** — pytest, CI via GitHub Actions
 
 ---
 
@@ -236,29 +217,25 @@ python -m pytest tests/ -v
 ```
 fala/
 ├── fala.py              # CLI entrypoint
-├── config.py            # Settings and paths
-├── conversation.py      # Conversation engine — prompts, LLM calls, turn management, SRS feedback
-├── audio.py             # STT (Whisper) + TTS (Piper local / OpenAI cloud)
-├── progress.py          # Rolling summary, SM-2 spaced repetition, vocabulary tracking, CEFR stats
-├── web.py               # Web prototype (FastAPI chat UI)
+├── config.py            # Settings, .env auto-loading
+├── conversation.py      # Conversation engine, prompts, SRS feedback
+├── audio.py             # STT (Whisper) + TTS (Piper/OpenAI)
+├── progress.py          # Rolling summary, SM-2 SRS, CEFR stats
+├── web.py               # Web prototype (FastAPI)
 ├── prompts/
-│   ├── system.md        # Tutor personality, correction style, pronunciation rules
-│   └── warmup.md        # Warm-up phase template with retrieval practice
+│   ├── system.md        # Tutor personality and pedagogical rules
+│   └── warmup.md        # Warm-up template
 ├── tests/               # 56 tests (pytest)
-│   ├── test_config.py
-│   ├── test_conversation.py
-│   ├── test_fala.py
-│   └── test_progress.py
 ├── docs/
-│   ├── agents/          # Agent infrastructure and wayfinding
-│   ├── research/        # Research findings (TTS/STT, conversation UX, evaluation)
-│   └── architecture.md  # Design decisions and module documentation
+│   ├── agents/          # Wayfinding and agent infrastructure
+│   ├── research/        # TTS/STT, conversation UX, evaluation
+│   └── architecture.md
 └── data/                # Auto-created on first run
     ├── summary.md       # Rolling session summary
-    ├── vocabulary.md    # Learned words with SRS metadata
-    ├── pt_50k.txt       # Frequency-ranked pt-PT word list (CEFR mapping)
+    ├── vocabulary.md    # Words with SRS metadata
+    ├── pt_50k.txt       # Frequency-ranked pt-PT word list
     ├── sessions/        # Raw session logs
-    ├── records/         # Learning records for graduated words
+    ├── records/         # Graduated word records
     └── piper-voices/    # Downloaded Piper voice models
 ```
 
@@ -266,22 +243,20 @@ fala/
 
 ## Design decisions
 
-Built from a deliberate set of choices:
-
-- **CLI over web/mobile** — low friction, fast iteration, works in any terminal
+- **CLI over web/mobile** — low friction, works in any terminal
 - **Hybrid audio** — local Whisper for STT; Piper (local) or OpenAI (cloud) for TTS
-- **File-based persistence** — human-readable markdown over databases; grep-friendly, version-controllable
-- **LLM-assisted spaced repetition** — the model assesses confidence per turn; SM-2 scheduler handles timing
-- **Gentle in-flow correction** — the tutor models the correct version naturally, never reveals the answer directly (informed by research on Praktika, Talkpal, and academic sources)
-- **Pronunciation feedback on voice only** — the tutor only gives pronunciation advice when you speak, not when you type
-- **CEFR-graded vocabulary tracking** — every word gets a CEFR band based on a 50K-entry frequency list. `/stats` shows your vocabulary distribution and SRS health at a glance.
-- **Natural name introduction** — the tutor asks "Como te chamas?" in Portuguese as the very first interaction, making it a teaching moment
+- **File-based persistence** — human-readable markdown, grep-friendly
+- **LLM-assisted spaced repetition** — model assesses confidence, SM-2 handles timing
+- **Comprehension-first method** — words taught in real-life example sentences, no grammar lectures
+- **Gentle in-flow correction** — research-backed (Praktika, Talkpal, academic sources)
+- **Pronunciation feedback on voice only** — never on typed input
+- **CEFR vocabulary tracking** — `/stats` shows distribution and SRS health
 
 ---
 
 ## Feedback / Issues
 
-This is an early-stage project. Bugs, rough edges, and missing features are expected. If something broke or confused you, [open an issue](https://github.com/armchairfuturist-code/FALA/issues) — every report makes the tool better.
+This is an early-stage project. Bugs, rough edges, and missing features are expected. [Open an issue](https://github.com/armchairfuturist-code/FALA/issues) — every report makes the tool better.
 
 ---
 
