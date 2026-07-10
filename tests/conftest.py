@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 
+# Block .env loading for all tests — set before any test imports config
+os.environ["FALA_SKIP_DOTENV"] = "1"
+
 
 @pytest.fixture
 def temp_data_dir():
@@ -31,11 +34,13 @@ def temp_data_dir():
 
 @pytest.fixture
 def clear_env():
-    """Remove FALA_* env vars for clean tests."""
+    """Remove FALA_* env vars for clean tests. Also skip .env loading."""
+    os.environ["FALA_SKIP_DOTENV"] = "1"
     saved = {}
     for key in list(os.environ):
-        if key.startswith("FALA_"):
+        if key.startswith("FALA_") and key != "FALA_SKIP_DOTENV":
             saved[key] = os.environ.pop(key)
     yield
     for key, val in saved.items():
         os.environ[key] = val
+    os.environ.pop("FALA_SKIP_DOTENV", None)

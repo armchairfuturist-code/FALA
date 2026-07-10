@@ -1,6 +1,7 @@
 """Tests for conversation.py — ConversationEngine."""
 
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -373,12 +374,13 @@ class TestEndSession:
         ]
 
         with patch("conversation.save_summary"):
-            with patch("conversation.save_learning_record") as mock_save:
-                with patch(
-                    "conversation.ConversationEngine._call_llm",
-                    return_value="new summary",
-                ):
-                    result = engine.end_session()
+            with patch("conversation.save_vocabulary"):
+                with patch("conversation.save_learning_record") as mock_save:
+                    with patch(
+                        "conversation.ConversationEngine._call_llm",
+                        return_value="new summary",
+                    ):
+                        result = engine.end_session()
 
         assert "1 words learned" in result
         mock_save.assert_called_once()
@@ -398,12 +400,13 @@ class TestEndSession:
         engine.vocabulary = []
 
         with patch("conversation.save_summary"):
-            with patch("conversation.save_learning_record") as mock_save:
-                with patch(
-                    "conversation.ConversationEngine._call_llm",
-                    return_value="new summary",
-                ):
-                    result = engine.end_session()
+            with patch("conversation.save_vocabulary"):
+                with patch("conversation.save_learning_record") as mock_save:
+                    with patch(
+                        "conversation.ConversationEngine._call_llm",
+                        return_value="new summary",
+                    ):
+                        result = engine.end_session()
 
         assert "0 words learned" in result
         assert "Session saved" in result

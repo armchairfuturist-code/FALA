@@ -16,9 +16,9 @@ from progress import (
     get_vocab_for_prompt,
     load_summary,
     load_vocabulary,
+    save_learning_record,
     save_summary,
     save_vocabulary,
-    save_learning_record,
     update_vocab_after_review,
     vocabulary_report,
 )
@@ -26,6 +26,15 @@ from progress import (
 
 class ConversationEngine:
     def __init__(self):
+        if not LLM_API_KEY:
+            raise ValueError(
+                "No API key configured. Set FALA_API_KEY or OPENAI_API_KEY environment variable.\n"
+                "Get a free key at https://console.groq.com/keys, then:\n"
+                "  cp .env.example .env\n"
+                "  # edit .env with your key\n"
+                "  source .env\n"
+                "Or see .env.example for instructions."
+            )
         self.client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
         self.summary = load_summary()
         self.vocabulary = load_vocabulary()
@@ -47,9 +56,17 @@ class ConversationEngine:
         self.messages = [{"role": "system", "content": content}]
 
     def _extract_level(self) -> str:
+        known_levels = {"A0", "A1", "A2", "B1", "B2", "C1", "C2"}
         for line in self.summary.splitlines():
             if "current level" in line.lower():
-                for level in ["A0", "A1", "A2", "B1"]:
+                # Try to extract the level value after the colon
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    candidate = parts[1].strip()
+                    if candidate in known_levels:
+                        return candidate
+                # Fall back to substring scan
+                for level in sorted(known_levels, key=len, reverse=True):
                     if level in line:
                         return level
         return "A0"
@@ -82,8 +99,7 @@ class ConversationEngine:
             return "No vocabulary yet. Start a session to build your word bank!"
 
         cefr_parts = " · ".join(
-            f"{band}: {count}"
-            for band, count in sorted(report["cefr"].items())
+            f"{band}: {count}" for band, count in sorted(report["cefr"].items())
         )
         lines = [
             f"Vocabulary: {total} words ({cefr_parts})",
@@ -108,7 +124,11 @@ class ConversationEngine:
         if len(self.messages) >= 2:
             self.messages[1] = {
                 "role": "system",
-                "content": "[The warm-up phase is complete. You greeted the learner and started the conversation. Now continue naturally in response to their messages.]",
+                "content": (
+                    "[The warm-up phase is complete. You greeted the learner and "
+                    "started the conversation. Now continue naturally in response "
+                    "to their messages.]"
+                ),
             }
         self._warmup_done = True
         return response
@@ -116,10 +136,16 @@ class ConversationEngine:
     def user_message(self, text: str, is_voice: bool = False) -> str:
         # First message after warmup: frame it as a response to the tutor's question
         if self._warmup_done:
-            self.messages.append({
-                "role": "system",
-                "content": "[The learner is now answering your question above. Continue naturally — if they translated correctly, affirm it. If wrong, guide them.]",
-            })
+            self.messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "[The learner is now answering your question above. "
+                        "Continue naturally — if they translated correctly, "
+                        "affirm it. If wrong, guide them.]"
+                    ),
+                }
+            )
             self._warmup_done = False
 
         prefix = "[voice] " if is_voice else ""
@@ -145,9 +171,7 @@ class ConversationEngine:
     def _extract_vocab_from_exchange(self, user_msg: str, assistant_msg: str):
         """Extract new words and assess review words from an exchange."""
         # Collect words currently needing review so we can assess them
-        review_candidates = [
-            e["word"] for e in self.vocabulary if e.get("needs_review", False)
-        ]
+        review_candidates = [e["word"] for e in self.vocabulary if e.get("needs_review", False)]
 
         prompt_text = (
             "Analyse this learner-tutor exchange and return a JSON object.\n\n"
@@ -155,16 +179,15 @@ class ConversationEngine:
             "2. For each review word that the LEARNER attempted to use (not the tutor), "
             "assess whether the learner used it correctly.\n\n"
             "Return ONLY JSON with this shape, no other text:\n"
-            '{\n'
+            "{\n"
             '  "new_words": [{"word": "...", "english": "...", "context": "..."}],\n'
             '  "assessments": [{"word": "...", "correct": true}],\n'
             '  "notes": "..."\n'
-            '}\n\n'
+            "}\n\n"
         )
         if review_candidates:
             prompt_text += (
-                "Review words the learner may have attempted: "
-                f"{', '.join(review_candidates)}\n\n"
+                f"Review words the learner may have attempted: {', '.join(review_candidates)}\n\n"
             )
         prompt_text += f"User: {user_msg}\nTutor: {assistant_msg}"
 
@@ -209,8 +232,13 @@ class ConversationEngine:
     def end_session(self) -> str:
         save_vocabulary(self.vocabulary)
 
-        session_path = SESSIONS_DIR / f"{self.session_start.strftime('%Y-%m-%d-%H%M')}.md"
+        session_path = SESSIONS_DIR / f"{self.session_start.strftime('%Y-%m-%d-%H%M%S')}.md"
         session_path.write_text("\n\n".join(self.session_log))
+
+        # Build actual vocabulary list for the LLM so word count is accurate
+        actual_vocab_list = (
+            ", ".join(e["word"] for e in self.vocabulary) if self.vocabulary else "(none)"
+        )
 
         summary_prompt = [
             {
@@ -224,12 +252,16 @@ class ConversationEngine:
                     "4. Updates grammar progress if applicable\n"
                     "5. Sets the correct current level (A0/A1/A2/B1)\n"
                     "6. If the learner gave their name, set the Learner name field\n"
+                    "IMPORTANT: For 'Total vocabulary', use ONLY the actual vocabulary list "
+                    "provided below — do NOT carry over word lists from the old summary. "
+                    "Count the words in the actual list.\n"
                     "Keep the same markdown format. Be concise."
                 ),
             },
             {
                 "role": "user",
                 "content": (
+                    f"## Actual Vocabulary (source of truth)\n{actual_vocab_list}\n\n"
                     f"## Current Summary\n{self.summary}\n\n"
                     f"## Session Transcript\n" + "\n".join(self.session_log[-20:])
                 ),
@@ -252,12 +284,12 @@ class ConversationEngine:
 
         # Save learning records for words that graduated
         graduated = [
-            e for e in self.vocabulary
+            e
+            for e in self.vocabulary
             if e.get("confidence", 0) >= 0.8 and not e.get("needs_review", True)
         ]
         new_graduated = [
-            gw for gw in self.new_words
-            if any(v["word"] == gw["word"] for v in graduated)
+            gw for gw in self.new_words if any(v["word"] == gw["word"] for v in graduated)
         ]
         for gw in new_graduated:
             title = f"Learned: {gw['word']}"
@@ -271,10 +303,11 @@ class ConversationEngine:
 
         # Build vocab/SRS report
         report = vocabulary_report(self.vocabulary)
-        cefr_parts = " · ".join(
-            f"{band}: {count}"
-            for band, count in sorted(report["cefr"].items())
-        ) if report["cefr"] else "(none)"
+        cefr_parts = (
+            " · ".join(f"{band}: {count}" for band, count in sorted(report["cefr"].items()))
+            if report["cefr"]
+            else "(none)"
+        )
         stats_line = (
             f"Vocabulary: {report['total_words']} words ({cefr_parts})"
             f" | Mature: {report['mature_words']}"

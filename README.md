@@ -18,18 +18,17 @@ python -m venv .venv
 source .venv/bin/activate  # Linux/Mac
 # .venv\Scripts\activate   # Windows
 
-# 3. Install dependencies (add piper-tts for free local voice)
+# 3. Install dependencies
 pip install -r requirements.txt
 pip install piper-tts  # free pt-PT voice, no API key needed
 
-# 4. Get a free API key from Groq (https://console.groq.com/keys)
-#    No credit card needed, instant signup, generous free tier.
-export FALA_BASE_URL=https://api.groq.com/openai/v1
-export FALA_API_KEY=gsk_your-key-here
-export FALA_MODEL=llama-3.3-70b-versatile
-export FALA_TTS=piper  # use free local voice instead of cloud
+# 4. Copy the example config and fill in a free Groq API key
+cp .env.example .env
+# Edit .env — replace gsk_your-key-here with your key from https://console.groq.com/keys
+# Groq is free, no credit card needed, instant signup.
+# The .env file is auto-loaded — no need to export manually.
 
-# 5. Run (tip: copy .env.example to .env and fill in your key)
+# 5. Run
 python3 fala.py
 ```
 

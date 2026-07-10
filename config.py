@@ -1,6 +1,18 @@
 import os
 from pathlib import Path
 
+# Load .env file if present (for development convenience)
+# Skip if FALA_SKIP_DOTENV is set (used by tests)
+try:
+    from dotenv import load_dotenv
+
+    if not os.getenv("FALA_SKIP_DOTENV"):
+        _env_path = Path(__file__).parent / ".env"
+        if _env_path.exists():
+            load_dotenv(_env_path)
+except ImportError:
+    pass
+
 PROJECT_DIR = Path(__file__).parent
 DATA_DIR = PROJECT_DIR / "data"
 SESSIONS_DIR = DATA_DIR / "sessions"

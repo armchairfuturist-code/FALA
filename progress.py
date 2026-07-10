@@ -1,8 +1,6 @@
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from config import DATA_DIR, GUARDRAILS, RECORDS_DIR, SUMMARY_PATH, VOCABULARY_PATH
-
 
 # ---------------------------------------------------------------------------
 # CEFR frequency word list
@@ -195,6 +193,10 @@ def _parse_vocab_entry(block: str) -> dict | None:
 
 
 def save_vocabulary(entries: list[dict]):
+    # Never overwrite vocabulary with empty data — prevents data loss
+    # if extraction fails or vocabulary was loaded from a corrupt file.
+    if not entries:
+        return
     lines = []
     for e in entries:
         lines.append(f'- word: "{e["word"]}"')
@@ -228,8 +230,9 @@ def get_review_words(entries: list[dict], count: int | None = None) -> list[dict
 
 
 def update_vocab_after_review(entries: list[dict], word: str, correct: bool) -> list[dict]:
+    word_lower = word.lower()
     for e in entries:
-        if e["word"] == word:
+        if e["word"].lower() == word_lower:
             today = datetime.now().strftime("%Y-%m-%d")
             e["last_reviewed"] = today
             if correct:
@@ -248,8 +251,14 @@ def update_vocab_after_review(entries: list[dict], word: str, correct: bool) -> 
 
 
 def add_vocabulary(entries: list[dict], word: str, english: str, context: str = "") -> list[dict]:
+    word_lower = word.lower()
     for e in entries:
-        if e["word"] == word:
+        if e["word"].lower() == word_lower:
+            # Update english/context if they were empty
+            if not e.get("english") and english:
+                e["english"] = english
+            if not e.get("context") and context:
+                e["context"] = context
             return entries
     entries.append(
         {

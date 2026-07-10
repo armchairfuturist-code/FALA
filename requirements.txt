@@ -1,4 +1,5 @@
 openai>=1.0.0
 rich>=13.0.0
+python-dotenv>=1.0.0
 # piper-tts  # optional: for local TTS with FALA_TTS=piper
 # fastapi uvicorn python-multipart  # optional: for web prototype (python3 web.py)

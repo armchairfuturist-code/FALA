@@ -18,14 +18,21 @@ except ImportError:
 
 
 def main():
-    engine = ConversationEngine()
+    try:
+        engine = ConversationEngine()
+    except ValueError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        return
     voice_mode = False
 
     console.print()
+    subtitle = "A1→B1 | Type 'quit' to exit"
+    if AUDIO_AVAILABLE:
+        subtitle += " | /voice to toggle voice input"
     console.print(
         Panel.fit(
             "[bold cyan]fala[/bold cyan] — European Portuguese Tutor",
-            subtitle="A1→B1 | Type 'quit' to exit | /voice to toggle voice input",
+            subtitle=subtitle,
         )
     )
     console.print()
@@ -97,7 +104,11 @@ def print_tutor(text: str, speak_audio: bool = False):
     console.print()
     console.print(Panel(text, title="[bold blue]tutor[/bold blue]", border_style="blue"))
     if speak_audio and AUDIO_AVAILABLE:
-        speak(text)
+        ok = speak(text)
+        if not ok:
+            console.print(
+                "[dim](audio playback failed — is mpv, ffplay, or aplay installed?)[/dim]"
+            )
     console.print()
 
 

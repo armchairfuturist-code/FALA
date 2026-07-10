@@ -311,3 +311,55 @@ class TestGetVocabForPrompt:
         result = p.get_vocab_for_prompt(entries, count=5)
         lines = [ln for ln in result.split("\n") if ln.strip().startswith("-")]
         assert len(lines) <= 5
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for Group B fixes
+# ---------------------------------------------------------------------------
+
+
+class TestCaseInsensitiveDuplicates:
+    def test_add_vocabulary_case_insensitive(self):
+        p = _reload_progress()
+        entries = []
+        entries = p.add_vocabulary(entries, "Olá", "hello")
+        entries = p.add_vocabulary(entries, "olá", "hello")
+        assert len(entries) == 1, "Case variants should be treated as same word"
+
+    def test_update_vocab_after_review_case_insensitive(self):
+        p = _reload_progress()
+        entries = [
+            {
+                "word": "Olá",
+                "english": "hello",
+                "context": "",
+                "ease": 2.5,
+                "interval": 1,
+                "last_reviewed": "2026-01-01",
+                "confidence": 0.5,
+                "needs_review": True,
+            }
+        ]
+        entries = p.update_vocab_after_review(entries, "olá", correct=True)
+        assert entries[0]["confidence"] == 0.65, "Case-insensitive match should work"
+
+
+class TestSaveVocabularyEmptyGuard:
+    def test_save_empty_does_not_overwrite(self, tmp_path):
+        import config
+
+        old_path = config.VOCABULARY_PATH
+        test_path = tmp_path / "vocabulary.md"
+
+        # Write some existing data first
+        test_path.write_text('- word: "bom"\n  english: "good"\n  confidence: 0.5\n')
+
+        config.VOCABULARY_PATH = test_path
+        p = _reload_progress()
+
+        # Save empty list — should NOT overwrite
+        p.save_vocabulary([])
+        content = test_path.read_text()
+        assert "bom" in content, "Empty save should not overwrite existing vocabulary"
+
+        config.VOCABULARY_PATH = old_path
