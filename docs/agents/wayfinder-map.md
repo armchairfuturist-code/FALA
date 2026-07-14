@@ -1,42 +1,44 @@
-# FALA — Wayfinder Map
+# FALA — Wayfinder Map (Daily-Driver Trust Pass)
 
 ## Destination
 
-A conversational European Portuguese (pt-PT) CLI tutor you can run daily — reliable, pleasant to use, and effective for going from A1 to B1. All 12 tickets resolved; the route from start to destination is clear.
+FALA as a tutor you'd actually run daily for 10 minutes — **trust, not features**. The shipped MVP works; this effort closes the gap between "demo passes" and "I'd let it hold 200 hours of my vocabulary history." Zero new features. The route is: real test coverage for the untested shipped code, the guardrails that exist-but-don't-guard, and the type/lint surfaces that currently lie about safety.
+
+Ground-truth audit (2026-07-14) already cleared the QA inventory's worst fears — `save_vocabulary` empty-guard, `.env` loading, API-key error message, `/start` double-call guard, `_extract_level` A0–C2, `add_vocabulary` case-insensitive dedup, audio-failure user feedback, and the misleading `/voice` banner are all **already fixed** in current code. What remains is on this map.
 
 ## Notes
 
-- **Domain**: Language-learning CLI tool (European Portuguese tutor for English speakers)
-- **Stack**: Python 3.10+, OpenAI SDK, Rich (CLI), Whisper (local STT), OpenAI TTS
-- **Structure**: `fala.py` (entrypoint) → `conversation.py` (LLM orchestration) → `progress.py` (SRS + persistence) → `audio.py` (STT/TTS pipeline)
-- **Skills to consult**: `domain-modeling`, `grilling`, `implement`, `prototype`, `code-review`
-- **Standing**: 12 tickets closed. Map complete — the route to the destination is clear.
-- **Execution mode**: This effort overrides wayfinder's "plan, don't do" default — tickets here produce working code, not just decisions. The destination is a working tool, so each ticket either sharpens a decision or ships working features toward it.
-- **Tracker**: Local-markdown (`docs/agents/tickets/`). Tickets are claimed by setting the `assigned_to` field in frontmatter. Labels: `wayfinder:<type>` only.
+- **Domain**: European Portuguese (pt-PT) CLI tutor for English speakers, A1→B1.
+- **Stack**: Python 3.10+, OpenAI SDK, Rich, Piper TTS (local), Whisper (local STT), FastAPI (web port).
+- **Structure**: `fala.py` (CLI) → `conversation.py` (LLM) → `progress.py` (SRS + persistence) → `audio.py` (STT/TTS) → `web.py` (FastAPI port).
+- **Skills to consult**: `grilling`, `domain-modeling`, `code-review`, `tdd`.
+- **Tracker**: Local-markdown (`docs/agents/tickets/`). Claim by setting `assigned_to` in frontmatter; block via `blocked_by`; close by setting `assigned_to: closed` + adding a `## Resolution` section. Only `wayfinder:<type>` labels exist.
 - **Git**: Alex Myers <alex@thearmchairfuturist.com>
+- **Execution mode**: This effort, like its predecessor, overrides "plan, don't do" — tickets here ship working code (tests, fixes), not just decisions. The one exception is ticket 015 (grilling) which is a pure decision.
+- **Audit baseline**: ruff ✅ passing · mypy ❌ 13 errors (all in `progress.py` `parse_vocabulary`) · 59 tests passing across config/conversation/progress/fala · `web.py` + `vocabulary_report` untested · `max_new_words_per_session` defined in config, referenced nowhere · `start_warmup` has no idempotency guard.
 
 ## Decisions so far
 
-<!-- one line per closed ticket: name (linked) + gist of the answer -->
-
-- [Clone and verify](tickets/001-clone-and-verify.md) — Repo cloned locally, `.venv` + deps installed, CLI verified to start; `.venv/` added to `.gitignore`; Arch requires virtualenv for pip
-- [Bootstrap agent infrastructure](tickets/002-bootstrap-agent-infrastructure.md) — AGENTS.md, CONTEXT.md, issue-tracker.md, triage-labels.md, ADR template created and committed on `chore/bootstrap` branch
-- [Setup development environment](tickets/003-setup-development-environment.md) — pyproject.toml, ruff/pytest/mypy config, .env.example, scripts/bootstrap.sh + lint.sh, all lint passes clean
-- [Architecture documentation](tickets/004-architecture-documentation.md) — docs/architecture.md with module graph, data flow, SRS algorithm, prompt templates, audio pipeline, 8 design decisions, 8 latent issues documented; README claims checked
-- [Testing and CI](tickets/005-testing-and-ci.md) — 52 tests (config, progress, conversation, fala smoke test), .github/workflows/ci.yml, fixed load_vocabulary parsing bug
-- [Fix SRS feedback loop](tickets/006-fix-srs-feedback-loop.md) — `update_vocab_after_review()` and `save_learning_record()` wired into `conversation.py`; extraction prompt returns `{"new_words": [...], "assessments": [...]}`; 4 integration tests added; 56 tests total
-- [Research TTS/STT quality for pt-PT](tickets/007-research-tts-stt-ptpt.md) — 6 TTS and 7 STT options evaluated; Piper TTS (tugão) is best local neural voice; Google STT has explicit pt-PT locale; recommendation is multi-tier quality progression
-- [Add Piper TTS](tickets/008-add-piper-tts.md) — Piper TTS engine added to `audio.py`; `FALA_TTS=piper` env var switches to local tugão pt-PT voice; auto-downloads from HuggingFace; banner shows active provider
-- [Review conversation prompts](tickets/009-review-conversation-prompts.md) — Researched Praktika, Talkpal, and academic sources; rewrote `system.md` and `warmup.md` with gentle in-flow correction, no-direct-answer guardrails, conditional pronunciation feedback, and natural name introduction
-- [Research evaluation/progress measurement](tickets/010-research-evaluation.md) — Surveyed Duolingo, Anki, LingQ, CEFR vocab; recommended CEFR breakdown + SRS health report + `/stats` command (ticket #011 implements)
-- [CEFR vocabulary breakdown](tickets/011-cefr-vocab-breakdown.md) — Implemented `vocabulary_report()` via FrequencyWords pt_50k.txt; `/stats` command mid-session; CEFR breakdown + SRS stats shown at session end
-- [Prototype web port](tickets/012-prototype-web-port.md) — FastAPI chat UI (`web.py`) wrapping ConversationEngine; single-page HTML with `/start`, `/message`, `/stats`, `/quit` endpoints; runs on `http://127.0.0.1:8080`
+- [mypy pass on `progress.py`](docs/agents/tickets/017-mypy-progress-parsing.md) — 13 type errors fixed via `VocabEntry` alias. 0 mypy errors, 59 tests green.
+- [enforce or remove max-new-words](docs/agents/tickets/015-enforce-or-remove-max-new-words.md) — **Enforce in code.** `conversation.py` truncates `new_words` to 5 before adding to vocab. Guardrail is real, not a prompt hint.
+- [warmup idempotency guard](docs/agents/tickets/016-warmup-idempotency-guard.md) — `start_warmup` checks `_warmup_done` and returns early. 2 new tests, 61/61 green.
+- [vocab-report-test-coverage](docs/agents/tickets/013-vocab-report-test-coverage.md) — 4 new tests mocking `_load_frequency_words`. 65 tests green.
+- [web-py-test-coverage](docs/agents/tickets/014-web-py-test-coverage.md) — 12 FastAPI TestClient tests across all endpoints. 77 tests green.
+- [record-numbering-gaps](docs/agents/tickets/019-record-numbering-gaps.md) — `save_learning_record` uses `max(nums)+1` instead of `len+1`. No collision on delete.
+- [session-filename-collision](docs/agents/tickets/018-session-filename-collision.md) — **Leave as-is.** Second-resolution `%H%M%S` is sufficient; collision only loses session log, not vocab.
 
 ## Not yet specified
 
-*(none)*
+<!-- in-scope fog you can't ticket yet; graduates as the frontier advances -->
+
+- **Mid-session failure modes**: LLM rate-limit or transient API error *during* a conversation (not at startup) — does `user_message`/`_call_llm` degrade gracefully, drop the turn, or crash? Need to see the live error path before ticketing. The startup path is handled (`__init__` raises helpful `ValueError`); the mid-session path is not audited.
+- **Long-session memory**: `session_log` grows unbounded in memory; only last 20 lines go to the summary LLM. Fine for a 10-min daily session, but is there a session length where something breaks? No data — would need a real long session to find out.
+- **Vocab file corruption recovery**: `load_vocabulary` reads YAML-ish lines; if `vocabulary.md` is hand-edited malformed, it crashes. The mypy fix (ticket 017) masked this at the type level but `_parse_vocab_entry` does bare `float(parts[1])`/`int(parts[2])` with no try/except — a single malformed line throws `ValueError` and the session is lost.
 
 ## Out of scope
 
-- **Multi-user / cloud sync** — this is a personal CLI tool.
-- **Multi-language support** — EP-only by design. Adding other languages would be a separate effort.
+- **Multi-user / cloud sync** — personal CLI tool (carried from prior map).
+- **Multi-language support** — EP-only by design (carried).
+- **New learning features** — spaced-review prompts, CEFR-tagged drills, gamification, progress dashboards. The destination is *trust in what exists*, not *more*.
+- **Web port redesign** — `web.py` works; its only known issue (double-`/start` data loss) is already fixed via `_session_started/_session_ended` guards. Test coverage is in scope (ticket 014); a re-architecture is not.
+- **Re-litigating closed decisions** — the prior map's 12 tickets are done. This map starts from their outputs.

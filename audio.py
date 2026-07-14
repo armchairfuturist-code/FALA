@@ -158,7 +158,7 @@ def get_tts_provider_info() -> str:
 
 def speech_to_text(audio_path: Path) -> str | None:
     try:
-        import whisper
+        import whisper  # type: ignore[import-not-found]
 
         model = whisper.load_model(STT_MODEL)
         result = model.transcribe(str(audio_path), language="pt")

@@ -140,6 +140,58 @@ class TestStartWarmup:
                         result = engine.start_warmup()
                         assert "Bem-vindo" in result
 
+    def test_second_call_returns_early_no_extra_message(self):
+        """Calling start_warmup() twice does not append a second prompt."""
+        from conversation import ConversationEngine
+
+        with patch("conversation.ConversationEngine._build_system_prompt"):
+            with patch("conversation.load_summary", return_value=""):
+                with patch("conversation.load_vocabulary", return_value=[]):
+                    with patch("conversation.OpenAI") as mock_client:
+                        mock_client.return_value.chat.completions.create.return_value = (
+                            _fake_completion("Bem-vindo!")
+                        )
+                        engine = ConversationEngine()
+                        engine._call_llm = lambda: "Bem-vindo!"
+
+                        # First call — appends user prompt to messages
+                        engine.start_warmup()
+                        assert len(engine.messages) == 1  # user prompt only
+                        assert engine._warmup_done is True
+
+                        # Second call — should be a no-op, no extra messages
+                        result = engine.start_warmup()
+                        assert len(engine.messages) == 1  # no extra messages
+                        assert "already completed" in result
+
+    def test_second_call_does_not_invoke_llm(self):
+        """Second call to start_warmup() must not call _call_llm."""
+        from conversation import ConversationEngine
+
+        with patch("conversation.ConversationEngine._build_system_prompt"):
+            with patch("conversation.load_summary", return_value=""):
+                with patch("conversation.load_vocabulary", return_value=[]):
+                    with patch("conversation.OpenAI") as mock_client:
+                        mock_client.return_value.chat.completions.create.return_value = (
+                            _fake_completion("Bem-vindo!")
+                        )
+                        engine = ConversationEngine()
+                        call_count = 0
+                        original_llm = engine._call_llm
+
+                        def counting_llm():
+                            nonlocal call_count
+                            call_count += 1
+                            return original_llm()
+
+                        engine._call_llm = counting_llm
+
+                        engine.start_warmup()
+                        first_count = call_count
+                        engine.start_warmup()
+                        assert call_count == first_count  # no extra LLM call
+
+
 
 # ---------------------------------------------------------------------------
 # user_message and _extract_vocab_from_exchange

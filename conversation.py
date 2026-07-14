@@ -4,6 +4,7 @@ from datetime import datetime
 from openai import OpenAI
 
 from config import (
+    GUARDRAILS,
     LLM_API_KEY,
     LLM_BASE_URL,
     LLM_MODEL,
@@ -110,6 +111,8 @@ class ConversationEngine:
         return "\n".join(lines)
 
     def start_warmup(self) -> str:
+        if self._warmup_done:
+            return "[Warm-up already completed this session]"
         template = (PROMPTS_DIR / "warmup.md").read_text()
         content = template.format(
             summary=self.summary,
@@ -206,8 +209,12 @@ class ConversationEngine:
                 text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
             data = json.loads(text)
 
+            # Enforce max_new_words_per_session guardrail
+            max_new = GUARDRAILS["max_new_words_per_session"]
+            new_words_raw = data.get("new_words", [])[:max_new]
+
             # Extract new words
-            for w in data.get("new_words", []):
+            for w in new_words_raw:
                 if isinstance(w, dict) and "word" in w and "english" in w:
                     self.vocabulary = add_vocabulary(
                         self.vocabulary,

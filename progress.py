@@ -1,6 +1,13 @@
+from __future__ import annotations
+
 from datetime import datetime, timedelta
+from typing import Any
 
 from config import DATA_DIR, GUARDRAILS, RECORDS_DIR, SUMMARY_PATH, VOCABULARY_PATH
+
+# Vocab entries are heterogeneous: "word", "english", "context", "last_reviewed"
+# are str; "ease"/"confidence" float; "interval" int; "needs_review" bool.
+VocabEntry = dict[str, Any]
 
 # ---------------------------------------------------------------------------
 # CEFR frequency word list
@@ -42,7 +49,7 @@ def _cefr_band(rank: int) -> str:
     return "B2+"
 
 
-def vocabulary_report(entries: list[dict]) -> dict:
+def vocabulary_report(entries: list[VocabEntry]) -> VocabEntry:
     """Return a report with CEFR breakdown and SRS stats.
 
     Returns:
@@ -129,7 +136,7 @@ def _default_summary() -> str:
 """
 
 
-def load_vocabulary() -> list[dict]:
+def load_vocabulary() -> list[VocabEntry]:
     if not VOCABULARY_PATH.exists():
         return []
     entries = []
@@ -153,8 +160,8 @@ def load_vocabulary() -> list[dict]:
     return entries
 
 
-def _parse_vocab_entry(block: str) -> dict | None:
-    entry = {}
+def _parse_vocab_entry(block: str) -> VocabEntry | None:
+    entry: VocabEntry = {}
     for line in block.strip().splitlines():
         line = line.strip()
         if line.startswith("- word:"):
@@ -192,7 +199,7 @@ def _parse_vocab_entry(block: str) -> dict | None:
     return None
 
 
-def save_vocabulary(entries: list[dict]):
+def save_vocabulary(entries: list[VocabEntry]):
     # Never overwrite vocabulary with empty data — prevents data loss
     # if extraction fails or vocabulary was loaded from a corrupt file.
     if not entries:
@@ -211,9 +218,9 @@ def save_vocabulary(entries: list[dict]):
     VOCABULARY_PATH.write_text("\n".join(lines))
 
 
-def get_review_words(entries: list[dict], count: int | None = None) -> list[dict]:
+def get_review_words(entries: list[VocabEntry], count: int | None = None) -> list[VocabEntry]:
     if count is None:
-        count = GUARDRAILS["min_review_words_per_warmup"]
+        count = int(GUARDRAILS["min_review_words_per_warmup"])
     today = datetime.now().strftime("%Y-%m-%d")
     due = []
     for e in entries:
@@ -229,7 +236,9 @@ def get_review_words(entries: list[dict], count: int | None = None) -> list[dict
     return due[:count]
 
 
-def update_vocab_after_review(entries: list[dict], word: str, correct: bool) -> list[dict]:
+def update_vocab_after_review(
+    entries: list[VocabEntry], word: str, correct: bool
+) -> list[VocabEntry]:
     word_lower = word.lower()
     for e in entries:
         if e["word"].lower() == word_lower:
@@ -250,7 +259,9 @@ def update_vocab_after_review(entries: list[dict], word: str, correct: bool) -> 
     return entries
 
 
-def add_vocabulary(entries: list[dict], word: str, english: str, context: str = "") -> list[dict]:
+def add_vocabulary(
+    entries: list[VocabEntry], word: str, english: str, context: str = ""
+) -> list[VocabEntry]:
     word_lower = word.lower()
     for e in entries:
         if e["word"].lower() == word_lower:
@@ -277,13 +288,14 @@ def add_vocabulary(entries: list[dict], word: str, english: str, context: str = 
 
 def save_learning_record(title: str, content: str):
     existing = list(RECORDS_DIR.glob("*.md"))
-    num = len(existing) + 1
+    nums = [int(p.stem.split("-")[0]) for p in existing if p.stem.split("-")[0].isdigit()]
+    num = max(nums) + 1 if nums else 1
     slug = title.lower().replace(" ", "-")[:40]
     path = RECORDS_DIR / f"{num:04d}-{slug}.md"
     path.write_text(f"# {title}\n\nDate: {datetime.now().strftime('%Y-%m-%d')}\n\n{content}\n")
 
 
-def get_vocab_for_prompt(entries: list[dict], count: int = 15) -> str:
+def get_vocab_for_prompt(entries: list[VocabEntry], count: int = 15) -> str:
     review = get_review_words(entries, count)
     if not review:
         return "(no vocabulary yet — this is the first session)"

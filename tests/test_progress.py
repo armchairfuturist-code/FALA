@@ -363,3 +363,69 @@ class TestSaveVocabularyEmptyGuard:
         assert "bom" in content, "Empty save should not overwrite existing vocabulary"
 
         config.VOCABULARY_PATH = old_path
+
+
+# ---------------------------------------------------------------------------
+# vocabulary_report
+# ---------------------------------------------------------------------------
+
+class TestVocabularyReport:
+    def _mock_freqs(self, p):
+        """Patch _load_frequency_words to return known rank data."""
+        import progress as prog_mod
+
+        prog_mod._load_frequency_words = lambda: {
+            "ser": 10,
+            "ter": 200,
+            "bom": 498,
+            "livro": 501,
+            "janela": 1500,
+            "cadeira": 2001,
+            "edifício": 4000,
+            "responsabilidade": 5001,
+            "constitucional": 10000,
+        }
+        return prog_mod
+
+    def test_empty_vocabulary(self):
+        p = _reload_progress()
+        report = p.vocabulary_report([])
+        assert report["total_words"] == 0
+        assert report["cefr"] == {}
+        assert report["average_confidence"] == 0.0
+        assert report["mature_words"] == 0
+        assert report["due_for_review"] == 0
+
+    def test_cefr_bands_at_boundaries(self):
+        p = _reload_progress()
+        self._mock_freqs(p)
+        entries = [
+            {"word": "bom", "confidence": 0.5, "needs_review": False},
+            {"word": "janela", "confidence": 0.5, "needs_review": False},
+            {"word": "cadeira", "confidence": 0.5, "needs_review": False},
+            {"word": "responsabilidade", "confidence": 0.5, "needs_review": False},
+        ]
+        report = p.vocabulary_report(entries)
+        assert report["cefr"] == {"A1": 1, "A2": 1, "B1": 1, "B2+": 1}
+
+    def test_word_not_in_frequency_list(self):
+        p = _reload_progress()
+        self._mock_freqs(p)
+        entries = [{"word": "xpto", "confidence": 0.5, "needs_review": False}]
+        report = p.vocabulary_report(entries)
+        assert report["cefr"].get("B2+", 0) == 1
+
+    def test_srs_stats(self):
+        p = _reload_progress()
+        self._mock_freqs(p)
+        entries = [
+            {"word": "ser", "confidence": 0.9, "needs_review": False},
+            {"word": "ter", "confidence": 0.7, "needs_review": False},
+            {"word": "livro", "confidence": 0.5, "needs_review": True},
+            {"word": "janela", "confidence": 0.3, "needs_review": False},
+        ]
+        report = p.vocabulary_report(entries)
+        assert report["total_words"] == 4
+        assert report["mature_words"] == 2
+        assert report["average_confidence"] == pytest.approx(0.6, rel=1e-6)
+        assert report["due_for_review"] == 1

@@ -201,6 +201,28 @@ Spaced repetition (SM-2) runs behind the scenes.
 - **SRS health report** — stats at session end and via `/stats`
 - **Web prototype** — `python3 web.py` at http://127.0.0.1:8080
 - **56 automated tests** — pytest, CI via GitHub Actions
+- **77 tests** — pytest, 18 added in the daily-driver trust pass
+
+---
+
+## v0.2 — Daily-Driver Trust Pass (July 2026)
+
+This release closes the gap between "demo works" and "I'd trust it with 200 hours of vocabulary." **Zero new features** — every change is a fix, a guardrail, or a test.
+
+| Area | Before | After |
+|------|--------|-------|
+| **Tests** | 59 | **77** (+18) |
+| **Type safety** (mypy) | 13 errors | **0 errors** |
+| **Lint** (ruff) | 1 error | **clean** |
+| **`vocabulary_report`** | 0 tests | **4 tests** (empty, CEFR bands, unknown word, SRS stats) |
+| **`web.py` coverage** | 0 tests | **12 tests** (all 5 endpoints + regression guards for B5/B9) |
+| **`max_new_words_per_session`** | defined, never enforced | **enforced in code** (LLM output truncated to cap) |
+| **`start_warmup` idempotency** | no guard — double-call corrupts context | **early-return on second call** |
+| **Record numbering** | `len+1` reuses on delete | **`max+1`** no collision |
+| **Session filename collision** | seconds-resolution (B11 claimed minutes) | **accepted as-is** — negligible edge for personal CLI |
+
+**No behavior changes** except the guardrail enforcement — everything else is test coverage, type hints, or cosmetic numbering.
+
 
 ---
 
@@ -225,7 +247,7 @@ fala/
 ├── prompts/
 │   ├── system.md        # Tutor personality and pedagogical rules
 │   └── warmup.md        # Warm-up template
-├── tests/               # 56 tests (pytest)
+├── tests/               # 77 tests — pytest, CI via GitHub Actions
 ├── docs/
 │   ├── agents/          # Wayfinding and agent infrastructure
 │   ├── research/        # TTS/STT, conversation UX, evaluation
