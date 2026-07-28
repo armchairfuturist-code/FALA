@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Web prototype for FALA — wraps ConversationEngine in a chat UI."""
 
+import os
 import re
 import tempfile
 import time
@@ -14,6 +15,11 @@ from fastapi.responses import HTMLResponse
 
 from audio import speech_to_text, text_to_speech
 from conversation import ConversationEngine
+
+# Invite-code auth: when FALA_INVITE_CODES is set, only holders of valid
+# codes can use the app. Each code doubles as a user_id for per-user data.
+AUTH_CODES = {c.strip() for c in os.getenv("FALA_INVITE_CODES", "").split(",") if c.strip()}
+AUTH_ENABLED = bool(AUTH_CODES)
 
 SESSION_COOKIE = "fala_session"
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -35,15 +41,20 @@ class SessionState:
 _sessions: dict[str, SessionState] = {}
 
 
-def get_session(request: Request, response: Response) -> SessionState:
-    """Return this request's SessionState, creating it (and a cookie) if needed."""
+def get_session(request: Request, response: Response) -> SessionState | None:
+    """Return this request's SessionState, or None if not authenticated."""
     sid = request.cookies.get(SESSION_COOKIE, "")
-    if not _SESSION_ID_RE.match(sid):
-        sid = uuid.uuid4().hex
+    if AUTH_ENABLED:
+        if sid not in AUTH_CODES:
+            return None
+        user_id = sid
+    else:
+        if not _SESSION_ID_RE.match(sid):
+            sid = uuid.uuid4().hex
+        user_id = sid
     state = _sessions.get(sid)
     if state is None:
-        # user_id == session id for now; invite-code auth will bind real user ids
-        state = SessionState(user_id=sid)
+        state = SessionState(user_id=user_id)
         _sessions[sid] = state
     state.last_active = time.time()
     response.set_cookie(SESSION_COOKIE, sid, httponly=True, samesite="lax")
@@ -61,6 +72,50 @@ def get_engine(state: SessionState) -> ConversationEngine:
 
 
 app = FastAPI(title="FALA Web")
+
+AUTH_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FALA — Enter Invite Code</title>
+<style>
+body { font-family: system-ui, sans-serif; background: #f5f5f5;
+ display: flex; justify-content: center; min-height: 100vh; margin: 0; }
+.box { max-width: 400px; margin: auto; text-align: center; padding: 2rem; }
+h1 { font-size: 1.5rem; }
+input { padding: 0.5rem; font-size: 1rem; width: 200px;
+ border: 1px solid #ddd; border-radius: 6px; }
+button { padding: 0.5rem 1rem; font-size: 1rem; border: none;
+ border-radius: 6px; background: #1976d2; color: white;
+ cursor: pointer; margin-left: 0.5rem; }
+#error { color: #d32f3f; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+<div class="box">
+<h1>🇵🇹 FALA</h1>
+<p>Enter your invite code to start learning European Portuguese:</p>
+<form id="auth-form">
+<input type="text" id="code" placeholder="Invite code" autofocus />
+<button type="submit">Enter</button>
+</form>
+<p id="error"></p>
+</div>
+<script>
+document.getElementById('auth-form').onsubmit = async (e) => {
+ e.preventDefault();
+ const code = document.getElementById('code').value.trim();
+ const r = await fetch('/auth', {method:'POST',
+ headers:{'Content-Type':'application/x-www-form-urlencoded'},
+ body:'code='+encodeURIComponent(code)});
+ const data = await r.json();
+ if (data.ok) location.reload();
+ else document.getElementById('error').textContent = data.error || 'Invalid code';
+};
+</script>
+</body>
+</html>"""
 
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="en">
@@ -243,13 +298,29 @@ document.getElementById('input').addEventListener('keydown', e => {
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index():
+async def index(request: Request):
+    if AUTH_ENABLED:
+        sid = request.cookies.get(SESSION_COOKIE, "")
+        if sid not in AUTH_CODES:
+            return AUTH_PAGE
     return HTML_PAGE
+
+
+@app.post("/auth")
+async def authenticate(response: Response, code: str = Form(...)):
+    """Validate an invite code and set the session cookie."""
+    code = code.strip()
+    if code in AUTH_CODES:
+        response.set_cookie(SESSION_COOKIE, code, httponly=True, samesite="lax")
+        return {"ok": True}
+    return {"ok": False, "error": "Invalid invite code"}
 
 
 @app.post("/start")
 async def start(request: Request, response: Response):
     state = get_session(request, response)
+    if state is None:
+        return {"response": "Not authenticated.", "status": "auth_required"}
     if state.session_started and not state.session_ended:
         return {
             "response": "Session already started. Use /quit first to start a new one.",
@@ -271,6 +342,8 @@ async def start(request: Request, response: Response):
 @app.post("/message")
 async def message(request: Request, response: Response, text: str = Form(...)):
     state = get_session(request, response)
+    if state is None:
+        return {"response": "Not authenticated."}
     if not state.session_started or state.session_ended or state.engine is None:
         return {"response": "No active session. Call /start first."}
     eng = state.engine
@@ -289,6 +362,8 @@ async def message(request: Request, response: Response, text: str = Form(...)):
 @app.get("/stats")
 async def stats(request: Request, response: Response):
     state = get_session(request, response)
+    if state is None:
+        return {"stats": "Not authenticated."}
     try:
         eng = get_engine(state)
         return {"stats": eng.get_stats()}
@@ -299,6 +374,8 @@ async def stats(request: Request, response: Response):
 @app.post("/quit")
 async def quit_(request: Request, response: Response):
     state = get_session(request, response)
+    if state is None:
+        return {"response": "Not authenticated."}
     if not state.session_started or state.session_ended or state.engine is None:
         return {"response": "No active session to quit."}
     eng = state.engine

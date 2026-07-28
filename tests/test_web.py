@@ -224,3 +224,44 @@ class TestTTS:
         with patch("web.text_to_speech", return_value=None):
             resp = client.post("/tts", data={"text": "olá"})
         assert "error" in resp.json()
+
+
+class TestAuth:
+    @pytest.fixture
+    def auth_enabled(self):
+        import web
+
+        old_codes, old_enabled = web.AUTH_CODES, web.AUTH_ENABLED
+        web.AUTH_CODES = {"test-code-1", "test-code-2"}
+        web.AUTH_ENABLED = True
+        web._sessions.clear()
+        yield
+        web.AUTH_CODES = old_codes
+        web.AUTH_ENABLED = old_enabled
+
+    def test_index_shows_auth_page_when_enabled(self, client, auth_enabled):
+        resp = client.get("/")
+        assert "invite code" in resp.text.lower()
+
+    def test_index_shows_chat_when_authenticated(self, client, auth_enabled, mock_engine):
+        client.cookies.set("fala_session", "test-code-1")
+        resp = client.get("/")
+        assert "invite" not in resp.text.lower()
+
+    def test_valid_code_sets_cookie(self, client, auth_enabled):
+        resp = client.post("/auth", data={"code": "test-code-1"})
+        assert resp.json()["ok"] is True
+        assert client.cookies.get("fala_session") == "test-code-1"
+
+    def test_invalid_code_rejected(self, client, auth_enabled):
+        resp = client.post("/auth", data={"code": "wrong"})
+        assert resp.json()["ok"] is False
+
+    def test_unauthenticated_start_rejected(self, client, auth_enabled):
+        resp = client.post("/start")
+        assert resp.json()["status"] == "auth_required"
+
+    def test_authenticated_start_works(self, client, auth_enabled, mock_engine):
+        client.cookies.set("fala_session", "test-code-1")
+        resp = client.post("/start")
+        assert "Bem-vindo" in resp.json()["response"]
