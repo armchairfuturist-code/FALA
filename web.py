@@ -2,14 +2,17 @@
 """Web prototype for FALA — wraps ConversationEngine in a chat UI."""
 
 import re
+import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, Form, Request, Response
+from fastapi import FastAPI, File, Form, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse
 
+from audio import speech_to_text, text_to_speech
 from conversation import ConversationEngine
 
 SESSION_COOKIE = "fala_session"
@@ -88,6 +91,9 @@ HTML_PAGE = """<!DOCTYPE html>
   #quit-btn { background: #d32f2f; color: white; }
   .actions { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
   .loading { opacity: 0.6; pointer-events: none; }
+#mic-btn { background: #388e3c; color: white; }
+#mic-btn.recording { background: #d32f3f; animation: pulse 1s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 </style>
 </head>
 <body>
@@ -101,11 +107,15 @@ HTML_PAGE = """<!DOCTYPE html>
   </div>
   <div class="input-row">
     <input id="input" type="text" placeholder="Type your message..." autofocus />
+ <button id="mic-btn" onclick="toggleVoice()">🎤</button>
     <button id="send" onclick="sendMessage()">Send</button>
   </div>
 </div>
 <script>
 let started = false;
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
 
 function addMsg(text, cls) {
   const el = document.createElement('div');
@@ -115,7 +125,11 @@ function addMsg(text, cls) {
   el.scrollIntoView({ behavior: 'smooth' });
 }
 
-async function startWarmup() {
+function setStatus(text) {
+ document.getElementById('status').textContent = text || '';
+ }
+
+ async function startWarmup() {
   document.getElementById('status').textContent = 'Starting warm-up...';
   const r = await fetch('/start', { method: 'POST' });
   const data = await r.json();
@@ -123,14 +137,74 @@ async function startWarmup() {
   addMsg(data.response, 'tutor');
   started = true;
 }
+ playTTS(data.response);
 
-async function sendMessage() {
+async function toggleVoice() {
+ if (isRecording) { mediaRecorder.stop(); return; }
+ try {
+ const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+ audioChunks = [];
+ mediaRecorder = new MediaRecorder(stream);
+ mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+ mediaRecorder.onstop = handleVoiceInput;
+ mediaRecorder.start();
+ isRecording = true;
+ const btn = document.getElementById('mic-btn');
+ btn.textContent = '⏹';
+ btn.classList.add('recording');
+ setStatus('listening...');
+ } catch (e) {
+ addMsg('Microphone access denied or unavailable', 'sys');
+ }
+ }
+
+ async function handleVoiceInput() {
+ isRecording = false;
+ const btn = document.getElementById('mic-btn');
+ btn.textContent = '🎤';
+ btn.classList.remove('recording');
+ setStatus('transcribing...');
+ const blob = new Blob(audioChunks, { type: 'audio/webm' });
+ const fd = new FormData();
+ fd.append('file', blob, 'voice.webm');
+ const r = await fetch('/stt', { method: 'POST', body: fd });
+ const data = await r.json();
+ if (data.transcript) {
+ document.getElementById('input').value = data.transcript;
+ setStatus('heard: ' + data.transcript);
+ sendMessage();
+ } else {
+ setStatus(data.error || 'Voice input failed \u2014 type instead');
+ }
+ }
+
+ async function playTTS(text) {
+ setStatus('speaking...');
+ try {
+ const r = await fetch('/tts', {
+ method: 'POST',
+ headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+ body: 'text=' + encodeURIComponent(text),
+ });
+ const ct = r.headers.get('content-type') || '';
+ if (ct.includes('audio')) {
+ const blob = await r.blob();
+ const url = URL.createObjectURL(blob);
+ const audio = new Audio(url);
+ audio.onended = () => { URL.revokeObjectURL(url); setStatus(''); };
+ audio.play();
+ } else { setStatus(''); }
+ } catch (e) { setStatus(''); }
+ }
+
+ async function sendMessage() {
   const input = document.getElementById('input');
   const text = input.value.trim();
   if (!text || !started) return;
   input.value = '';
   addMsg(text, 'user');
   document.getElementById('send').classList.add('loading');
+ setStatus('thinking...');
   const r = await fetch('/message', {
     method: 'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -139,6 +213,8 @@ async function sendMessage() {
   const data = await r.json();
   document.getElementById('send').classList.remove('loading');
   addMsg(data.response, 'tutor');
+ setStatus('');
+ playTTS(data.response);
 }
 
 async function getStats() {
@@ -233,6 +309,38 @@ async def quit_(request: Request, response: Response):
         return {"response": result}
     except Exception as e:
         return {"response": f"Error: {e}"}
+
+
+@app.post("/stt")
+async def stt(file: UploadFile = File(...)):
+    """Transcribe an audio blob to text (stateless)."""
+    suffix = Path(file.filename).suffix if file.filename else ".webm"
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    tmp.write(await file.read())
+    tmp.close()
+    path = Path(tmp.name)
+    try:
+        transcript = speech_to_text(path)
+        return {"transcript": transcript or ""}
+    except Exception as e:
+        return {"transcript": "", "error": str(e)}
+    finally:
+        path.unlink(missing_ok=True)
+
+
+@app.post("/tts")
+async def tts(text: str = Form(...)):
+    """Synthesize text to audio bytes (stateless)."""
+    try:
+        path = text_to_speech(text)
+        if path is None:
+            return {"error": "TTS synthesis failed"}
+        content_type = "audio/wav" if path.suffix == ".wav" else "audio/mpeg"
+        data = path.read_bytes()
+        path.unlink(missing_ok=True)
+        return Response(content=data, media_type=content_type)
+    except Exception as e:
+        return {"error": str(e)}
 
 
 if __name__ == "__main__":

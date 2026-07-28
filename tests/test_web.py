@@ -1,5 +1,7 @@
 """Tests for web.py — FastAPI endpoints wrapping ConversationEngine."""
 
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -176,3 +178,49 @@ class TestQuit:
         resp = client.post("/quit")
         data = resp.json()
         assert "No active session" in data["response"]
+
+
+class TestSTT:
+    def test_stt_returns_transcript(self, client):
+        with patch("web.speech_to_text", return_value="olá tudo bem"):
+            resp = client.post("/stt", files={"file": ("voice.webm", b"audio", "audio/webm")})
+        assert resp.json()["transcript"] == "olá tudo bem"
+
+    def test_stt_empty_transcript(self, client):
+        with patch("web.speech_to_text", return_value=None):
+            resp = client.post("/stt", files={"file": ("voice.webm", b"audio", "audio/webm")})
+        assert resp.json()["transcript"] == ""
+
+    def test_stt_error(self, client):
+        with patch("web.speech_to_text", side_effect=RuntimeError("STT failed")):
+            resp = client.post("/stt", files={"file": ("voice.webm", b"audio", "audio/webm")})
+        data = resp.json()
+        assert data["transcript"] == ""
+        assert "STT failed" in data["error"]
+
+
+class TestTTS:
+    def test_tts_returns_mp3_audio(self, client):
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            f.write(b"fake-mp3")
+            tmp = Path(f.name)
+        with patch("web.text_to_speech", return_value=tmp):
+            resp = client.post("/tts", data={"text": "olá"})
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "audio/mpeg"
+        assert resp.content == b"fake-mp3"
+        assert not tmp.exists()
+
+    def test_tts_returns_wav_audio(self, client):
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(b"fake-wav")
+            tmp = Path(f.name)
+        with patch("web.text_to_speech", return_value=tmp):
+            resp = client.post("/tts", data={"text": "olá"})
+        assert resp.headers["content-type"] == "audio/wav"
+        assert not tmp.exists()
+
+    def test_tts_synthesis_failure(self, client):
+        with patch("web.text_to_speech", return_value=None):
+            resp = client.post("/tts", data={"text": "olá"})
+        assert "error" in resp.json()
