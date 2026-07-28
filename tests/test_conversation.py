@@ -192,7 +192,6 @@ class TestStartWarmup:
                         assert call_count == first_count  # no extra LLM call
 
 
-
 # ---------------------------------------------------------------------------
 # user_message and _extract_vocab_from_exchange
 # ---------------------------------------------------------------------------
@@ -360,6 +359,98 @@ class TestExtractVocabFromExchange:
                         assert entry["confidence"] == pytest.approx(0.5, rel=1e-6)  # 0.7 - 0.2
                         assert entry["interval"] == 1
                         assert entry["needs_review"] is True
+
+
+# ---------------------------------------------------------------------------
+# Per-user paths / isolation
+# ---------------------------------------------------------------------------
+
+
+class TestPerUserPaths:
+    def _make_engine(self, user_id="default"):
+        """Engine with mocked LLM + real (tmp) per-user filesystem."""
+        from conversation import ConversationEngine
+
+        with patch("conversation.ConversationEngine._build_system_prompt"):
+            with patch("conversation.OpenAI") as mock_client:
+                mock_client.return_value.chat.completions.create.return_value = _fake_completion(
+                    "new summary"
+                )
+                return ConversationEngine(user_id=user_id)
+
+    def _patch_data_dir(self, monkeypatch, tmp_path):
+        import config
+
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        monkeypatch.setattr(config, "DATA_DIR", data_dir)
+        return data_dir
+
+    def test_default_user_resolves_flat_paths(self, tmp_path, monkeypatch):
+        import config
+
+        data_dir = self._patch_data_dir(monkeypatch, tmp_path)
+        (data_dir / "sessions").mkdir()
+        (data_dir / "records").mkdir()
+        monkeypatch.setattr(config, "SUMMARY_PATH", data_dir / "summary.md")
+        monkeypatch.setattr(config, "VOCABULARY_PATH", data_dir / "vocabulary.md")
+        monkeypatch.setattr(config, "SESSIONS_DIR", data_dir / "sessions")
+        monkeypatch.setattr(config, "RECORDS_DIR", data_dir / "records")
+
+        engine = self._make_engine()
+        assert engine.user_id == "default"
+        assert engine.paths.summary == data_dir / "summary.md"
+        assert engine.paths.vocabulary == data_dir / "vocabulary.md"
+        assert engine.paths.sessions == data_dir / "sessions"
+        assert engine.paths.records == data_dir / "records"
+
+    def test_vocab_isolated_between_users(self, tmp_path, monkeypatch):
+        data_dir = self._patch_data_dir(monkeypatch, tmp_path)
+
+        alice = self._make_engine("alice")
+        alice.vocabulary = [
+            {
+                "word": "livro",
+                "english": "book",
+                "context": "O livro é azul.",
+                "ease": 2.5,
+                "interval": 1,
+                "last_reviewed": "2026-07-28",
+                "confidence": 0.3,
+                "needs_review": True,
+            }
+        ]
+        result = alice.end_session()
+        assert "Session saved" in result
+
+        # Bob sees none of Alice's words
+        bob = self._make_engine("bob")
+        assert bob.vocabulary == []
+
+        # Alice's data persists across engine instances
+        alice2 = self._make_engine("alice")
+        assert [e["word"] for e in alice2.vocabulary] == ["livro"]
+
+        # Files land under data/users/<id>/; the flat default layout is untouched
+        assert (data_dir / "users" / "alice" / "vocabulary.md").exists()
+        assert (data_dir / "users" / "alice" / "summary.md").exists()
+        assert not (data_dir / "vocabulary.md").exists()
+        assert not (data_dir / "summary.md").exists()
+
+    def test_engines_do_not_share_state(self, tmp_path, monkeypatch):
+        self._patch_data_dir(monkeypatch, tmp_path)
+        alice = self._make_engine("alice")
+        bob = self._make_engine("bob")
+        assert alice.paths != bob.paths
+        alice.vocabulary.append({"word": "casa", "english": "house"})
+        assert bob.vocabulary == []
+
+    def test_invalid_user_id_raises(self):
+        from conversation import ConversationEngine
+
+        with patch("conversation.OpenAI"):
+            with pytest.raises(ValueError):
+                ConversationEngine(user_id="../evil")
 
 
 # ---------------------------------------------------------------------------

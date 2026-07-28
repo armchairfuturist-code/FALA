@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 
 from openai import OpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 from config import (
     GUARDRAILS,
@@ -9,7 +10,7 @@ from config import (
     LLM_BASE_URL,
     LLM_MODEL,
     PROMPTS_DIR,
-    SESSIONS_DIR,
+    paths_for_user,
 )
 from progress import (
     add_vocabulary,
@@ -26,7 +27,7 @@ from progress import (
 
 
 class ConversationEngine:
-    def __init__(self):
+    def __init__(self, user_id: str = "default"):
         if not LLM_API_KEY:
             raise ValueError(
                 "No API key configured. Set FALA_API_KEY or OPENAI_API_KEY environment variable.\n"
@@ -36,10 +37,12 @@ class ConversationEngine:
                 "  source .env\n"
                 "Or see .env.example for instructions."
             )
+        self.user_id = user_id
+        self.paths = paths_for_user(user_id)
         self.client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
-        self.summary = load_summary()
-        self.vocabulary = load_vocabulary()
-        self.messages: list[dict] = []
+        self.summary = load_summary(paths=self.paths)
+        self.vocabulary = load_vocabulary(paths=self.paths)
+        self.messages: list[ChatCompletionMessageParam] = []
         self.session_log: list[str] = []
         self.new_words: list[dict] = []
         self.session_start = datetime.now()
@@ -194,7 +197,7 @@ class ConversationEngine:
             )
         prompt_text += f"User: {user_msg}\nTutor: {assistant_msg}"
 
-        extract_prompt = [
+        extract_prompt: list[ChatCompletionMessageParam] = [
             {"role": "system", "content": prompt_text},
         ]
         try:
@@ -204,7 +207,7 @@ class ConversationEngine:
                 max_tokens=300,
                 temperature=0,
             )
-            text = resp.choices[0].message.content.strip()
+            text = (resp.choices[0].message.content or "").strip()
             if text.startswith("```"):
                 text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
             data = json.loads(text)
@@ -237,9 +240,9 @@ class ConversationEngine:
         self.session_log.append(f"[{role}] {text}")
 
     def end_session(self) -> str:
-        save_vocabulary(self.vocabulary)
+        save_vocabulary(self.vocabulary, paths=self.paths)
 
-        session_path = SESSIONS_DIR / f"{self.session_start.strftime('%Y-%m-%d-%H%M%S')}.md"
+        session_path = self.paths.sessions / f"{self.session_start.strftime('%Y-%m-%d-%H%M%S')}.md"
         session_path.write_text("\n\n".join(self.session_log))
 
         # Build actual vocabulary list for the LLM so word count is accurate
@@ -247,7 +250,7 @@ class ConversationEngine:
             ", ".join(e["word"] for e in self.vocabulary) if self.vocabulary else "(none)"
         )
 
-        summary_prompt = [
+        summary_prompt: list[ChatCompletionMessageParam] = [
             {
                 "role": "system",
                 "content": (
@@ -281,9 +284,9 @@ class ConversationEngine:
                 max_tokens=800,
                 temperature=0,
             )
-            new_summary = resp.choices[0].message.content.strip()
+            new_summary = (resp.choices[0].message.content or "").strip()
             if new_summary:
-                save_summary(new_summary)
+                save_summary(new_summary, paths=self.paths)
         except Exception:
             pass
 
@@ -306,7 +309,7 @@ class ConversationEngine:
                 f"Context: {gw.get('context', '')}\n"
                 f"You've learned this word!"
             )
-            save_learning_record(title, content)
+            save_learning_record(title, content, paths=self.paths)
 
         # Build vocab/SRS report
         report = vocabulary_report(self.vocabulary)

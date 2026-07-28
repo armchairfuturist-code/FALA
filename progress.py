@@ -3,11 +3,20 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from config import DATA_DIR, GUARDRAILS, RECORDS_DIR, SUMMARY_PATH, VOCABULARY_PATH
+from config import DATA_DIR, GUARDRAILS, UserPaths, paths_for_user
 
 # Vocab entries are heterogeneous: "word", "english", "context", "last_reviewed"
 # are str; "ease"/"confidence" float; "interval" int; "needs_review" bool.
 VocabEntry = dict[str, Any]
+
+# Paths for the default (flat data/) user. Rebuilt on module reload, so tests
+# that patch config constants then reload progress keep working.
+DEFAULT_PATHS = paths_for_user()
+
+
+def _resolve(paths: UserPaths | None) -> UserPaths:
+    return paths if paths is not None else DEFAULT_PATHS
+
 
 # ---------------------------------------------------------------------------
 # CEFR frequency word list
@@ -105,14 +114,15 @@ def vocabulary_report(entries: list[VocabEntry]) -> VocabEntry:
     }
 
 
-def load_summary() -> str:
-    if SUMMARY_PATH.exists():
-        return SUMMARY_PATH.read_text()
+def load_summary(paths: UserPaths | None = None) -> str:
+    p = _resolve(paths)
+    if p.summary.exists():
+        return p.summary.read_text()
     return _default_summary()
 
 
-def save_summary(text: str):
-    SUMMARY_PATH.write_text(text)
+def save_summary(text: str, paths: UserPaths | None = None):
+    _resolve(paths).summary.write_text(text)
 
 
 def _default_summary() -> str:
@@ -136,11 +146,12 @@ def _default_summary() -> str:
 """
 
 
-def load_vocabulary() -> list[VocabEntry]:
-    if not VOCABULARY_PATH.exists():
+def load_vocabulary(paths: UserPaths | None = None) -> list[VocabEntry]:
+    p = _resolve(paths)
+    if not p.vocabulary.exists():
         return []
     entries = []
-    text = VOCABULARY_PATH.read_text()
+    text = p.vocabulary.read_text()
     for block in text.strip().split("\n- word: "):
         if not block.strip():
             continue
@@ -199,11 +210,12 @@ def _parse_vocab_entry(block: str) -> VocabEntry | None:
     return None
 
 
-def save_vocabulary(entries: list[VocabEntry]):
+def save_vocabulary(entries: list[VocabEntry], paths: UserPaths | None = None):
     # Never overwrite vocabulary with empty data — prevents data loss
     # if extraction fails or vocabulary was loaded from a corrupt file.
     if not entries:
         return
+    p = _resolve(paths)
     lines = []
     for e in entries:
         lines.append(f'- word: "{e["word"]}"')
@@ -215,7 +227,7 @@ def save_vocabulary(entries: list[VocabEntry]):
         lines.append(f"  confidence: {e.get('confidence', 0.5)}")
         lines.append(f"  needs_review: {'true' if e.get('needs_review', True) else 'false'}")
         lines.append("")
-    VOCABULARY_PATH.write_text("\n".join(lines))
+    p.vocabulary.write_text("\n".join(lines))
 
 
 def get_review_words(entries: list[VocabEntry], count: int | None = None) -> list[VocabEntry]:
@@ -286,12 +298,13 @@ def add_vocabulary(
     return entries
 
 
-def save_learning_record(title: str, content: str):
-    existing = list(RECORDS_DIR.glob("*.md"))
+def save_learning_record(title: str, content: str, paths: UserPaths | None = None):
+    up = _resolve(paths)
+    existing = list(up.records.glob("*.md"))
     nums = [int(p.stem.split("-")[0]) for p in existing if p.stem.split("-")[0].isdigit()]
     num = max(nums) + 1 if nums else 1
     slug = title.lower().replace(" ", "-")[:40]
-    path = RECORDS_DIR / f"{num:04d}-{slug}.md"
+    path = up.records / f"{num:04d}-{slug}.md"
     path.write_text(f"# {title}\n\nDate: {datetime.now().strftime('%Y-%m-%d')}\n\n{content}\n")
 
 

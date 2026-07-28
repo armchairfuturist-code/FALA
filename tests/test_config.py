@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+import pytest
+
 
 class TestEnvVarDefaults:
     def test_default_model(self, clear_env):
@@ -78,6 +80,74 @@ class TestPaths:
         assert config.DATA_DIR.exists()
         assert config.SESSIONS_DIR.exists()
         assert config.RECORDS_DIR.exists()
+
+
+class TestPathsForUser:
+    def test_default_maps_to_flat_layout(self):
+        import config
+
+        p = config.paths_for_user("default")
+        assert p.user_id == "default"
+        assert p.data_dir == config.DATA_DIR
+        assert p.summary == config.SUMMARY_PATH
+        assert p.vocabulary == config.VOCABULARY_PATH
+        assert p.sessions == config.SESSIONS_DIR
+        assert p.records == config.RECORDS_DIR
+
+    def test_default_is_the_default_argument(self):
+        import config
+
+        assert config.paths_for_user() == config.paths_for_user("default")
+
+    def test_named_user_lives_under_users_dir(self, tmp_path, monkeypatch):
+        import config
+
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
+        p = config.paths_for_user("alice")
+        assert p.data_dir == tmp_path / "data" / "users" / "alice"
+        assert p.summary == p.data_dir / "summary.md"
+        assert p.vocabulary == p.data_dir / "vocabulary.md"
+        assert p.sessions == p.data_dir / "sessions"
+        assert p.records == p.data_dir / "records"
+
+    def test_named_user_dirs_created(self, tmp_path, monkeypatch):
+        import config
+
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
+        p = config.paths_for_user("alice")
+        assert p.data_dir.is_dir()
+        assert p.sessions.is_dir()
+        assert p.records.is_dir()
+
+    def test_named_users_are_isolated(self, tmp_path, monkeypatch):
+        import config
+
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
+        alice = config.paths_for_user("alice")
+        bob = config.paths_for_user("bob")
+        assert alice.data_dir != bob.data_dir
+        assert alice.vocabulary != bob.vocabulary
+
+    def test_default_does_not_create_users_dir(self, tmp_path, monkeypatch):
+        import config
+
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
+        config.paths_for_user("default")
+        assert not (tmp_path / "data" / "users").exists()
+
+    def test_path_traversal_user_id_rejected(self):
+        import config
+
+        for bad in ("../evil", "a/b", "a\\b", "", "white space", "dot.name"):
+            with pytest.raises(ValueError):
+                config.paths_for_user(bad)
+
+    def test_valid_user_id_characters_accepted(self, tmp_path, monkeypatch):
+        import config
+
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
+        for ok in ("alice", "user-1", "user_2", "ABC123"):
+            assert config.paths_for_user(ok).user_id == ok
 
 
 class TestGuardrails:

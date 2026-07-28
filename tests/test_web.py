@@ -1,4 +1,5 @@
 """Tests for web.py — FastAPI endpoints wrapping ConversationEngine."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,12 +22,10 @@ def mock_engine():
 
 @pytest.fixture(autouse=True)
 def reset_web_globals():
-    """Reset the web module's global state before each test."""
+    """Reset the web module's session store before each test."""
     import web
 
-    web.engine = None
-    web._session_started = False
-    web._session_ended = False
+    web._sessions.clear()
     yield
 
 
@@ -119,6 +118,48 @@ class TestStats:
         resp = client.get("/stats")
         data = resp.json()
         assert "stats" in data
+
+
+class TestMultiUserIsolation:
+    def test_session_cookie_set_and_stable(self, client, mock_engine):
+        client.post("/start")
+        sid = client.cookies.get("fala_session")
+        assert sid
+        client.post("/message", data={"text": "olá"})
+        assert client.cookies.get("fala_session") == sid
+
+    def test_two_clients_get_isolated_engines(self):
+        from web import app
+
+        engines = []
+
+        def make_engine(user_id):
+            m = MagicMock()
+            m.start_warmup.return_value = f"warmup-{user_id}"
+            m.get_status_report.return_value = "status"
+            engines.append((user_id, m))
+            return m
+
+        with patch("web.ConversationEngine", side_effect=make_engine):
+            client_a = TestClient(app)
+            client_b = TestClient(app)
+            ra = client_a.post("/start")
+            rb = client_b.post("/start")
+
+            assert ra.json()["response"] != rb.json()["response"]
+            assert len(engines) == 2
+            assert engines[0][0] != engines[1][0]
+            assert client_a.cookies.get("fala_session") != client_b.cookies.get("fala_session")
+
+            # Messaging on A touches only A's engine
+            client_a.post("/message", data={"text": "olá"})
+            engines[0][1].user_message.assert_called_once()
+            engines[1][1].user_message.assert_not_called()
+
+            # B's session is unaffected by A quitting
+            client_a.post("/quit")
+            resp = client_b.post("/message", data={"text": "olá"})
+            assert "No active session" not in resp.json()["response"]
 
 
 class TestQuit:

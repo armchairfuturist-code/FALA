@@ -1,30 +1,63 @@
 #!/usr/bin/env python3
 """Web prototype for FALA — wraps ConversationEngine in a chat UI."""
 
+import re
+import time
+import uuid
+from dataclasses import dataclass, field
+
 import uvicorn
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse
 
 from conversation import ConversationEngine
 
-# Single session for the prototype
-engine: ConversationEngine | None = None
-_session_started: bool = False
-_session_ended: bool = False
+SESSION_COOKIE = "fala_session"
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def get_engine() -> ConversationEngine:
-    global engine
-    if engine is None:
+@dataclass
+class SessionState:
+    """Per-browser-session state. user_id binds the session to on-disk data."""
+
+    user_id: str
+    engine: ConversationEngine | None = None
+    session_started: bool = False
+    session_ended: bool = False
+    last_active: float = field(default_factory=time.time)
+
+
+# Keyed by the fala_session cookie.
+# TODO: add an idle-session reaper — this dict grows unbounded.
+_sessions: dict[str, SessionState] = {}
+
+
+def get_session(request: Request, response: Response) -> SessionState:
+    """Return this request's SessionState, creating it (and a cookie) if needed."""
+    sid = request.cookies.get(SESSION_COOKIE, "")
+    if not _SESSION_ID_RE.match(sid):
+        sid = uuid.uuid4().hex
+    state = _sessions.get(sid)
+    if state is None:
+        # user_id == session id for now; invite-code auth will bind real user ids
+        state = SessionState(user_id=sid)
+        _sessions[sid] = state
+    state.last_active = time.time()
+    response.set_cookie(SESSION_COOKIE, sid, httponly=True, samesite="lax")
+    return state
+
+
+def get_engine(state: SessionState) -> ConversationEngine:
+    """Return (creating if needed) the engine for this session's user."""
+    if state.engine is None:
         try:
-            engine = ConversationEngine()
+            state.engine = ConversationEngine(user_id=state.user_id)
         except ValueError as e:
             raise RuntimeError(str(e)) from e
-    return engine
+    return state.engine
 
 
 app = FastAPI(title="FALA Web")
-
 
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="en">
@@ -139,36 +172,37 @@ async def index():
 
 
 @app.post("/start")
-async def start():
-    global engine, _session_started, _session_ended
-    if _session_started and not _session_ended:
+async def start(request: Request, response: Response):
+    state = get_session(request, response)
+    if state.session_started and not state.session_ended:
         return {
             "response": "Session already started. Use /quit first to start a new one.",
             "status": "already active",
         }
-    if _session_ended:
+    if state.session_ended:
         # Reset for new session
-        engine = None
-        _session_ended = False
+        state.engine = None
+        state.session_ended = False
     try:
-        eng = get_engine()
+        eng = get_engine(state)
         resp = eng.start_warmup()
-        _session_started = True
+        state.session_started = True
         return {"response": resp, "status": eng.get_status_report()}
     except Exception as e:
         return {"response": f"Error: {e}", "status": "error"}
 
 
 @app.post("/message")
-async def message(text: str = Form(...)):
-    global _session_started, _session_ended
-    if not _session_started or _session_ended:
+async def message(request: Request, response: Response, text: str = Form(...)):
+    state = get_session(request, response)
+    if not state.session_started or state.session_ended or state.engine is None:
         return {"response": "No active session. Call /start first."}
-    eng = get_engine()
+    eng = state.engine
     try:
         if text.strip().lower() in ("quit", "exit", "sair"):
             result = eng.end_session()
-            _session_ended = True
+            state.session_ended = True
+            state.engine = None
             return {"response": result}
         resp = eng.user_message(text)
         return {"response": resp}
@@ -177,23 +211,25 @@ async def message(text: str = Form(...)):
 
 
 @app.get("/stats")
-async def stats():
-    eng = get_engine()
+async def stats(request: Request, response: Response):
+    state = get_session(request, response)
     try:
+        eng = get_engine(state)
         return {"stats": eng.get_stats()}
     except Exception as e:
         return {"stats": f"Error: {e}"}
 
 
 @app.post("/quit")
-async def quit_():
-    global engine, _session_started, _session_ended
-    if not _session_started or _session_ended:
+async def quit_(request: Request, response: Response):
+    state = get_session(request, response)
+    if not state.session_started or state.session_ended or state.engine is None:
         return {"response": "No active session to quit."}
-    eng = get_engine()
+    eng = state.engine
     try:
         result = eng.end_session()
-        _session_ended = True
+        state.session_ended = True
+        state.engine = None
         return {"response": result}
     except Exception as e:
         return {"response": f"Error: {e}"}

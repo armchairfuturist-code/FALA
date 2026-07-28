@@ -369,6 +369,7 @@ class TestSaveVocabularyEmptyGuard:
 # vocabulary_report
 # ---------------------------------------------------------------------------
 
+
 class TestVocabularyReport:
     def _mock_freqs(self, p):
         """Patch _load_frequency_words to return known rank data."""
