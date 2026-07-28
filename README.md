@@ -88,8 +88,9 @@ pip install piper-tts
 ### Known limitations
 - Piper (tugão) is the only free local pt-PT voice — quality is medium but serviceable
 - Pronunciation feedback only works when you **speak** (voice input), not when you type
-- No multi-user support — this is a personal tool, single-user file-based
-- The web prototype (`python3 web.py`) is minimal — chat only, no voice
+- Cloud Run filesystem is ephemeral — user data resets on redeploy (needs persistent volume)
+- Piper TTS needs system deps not in the Docker image (use `FALA_TTS=openai` for hosted)
+- No streaming/VAD yet — push-to-talk only (hands-free is a planned M2 improvement)
 
 ---
 
@@ -133,12 +134,36 @@ pip install openai-whisper
 ```
 Then use `/voice` during a session to switch to voice input mode.
 
-### Web prototype
+### Web app (with voice)
+
+The web app wraps the CLI engine in a browser UI with push-to-talk voice:
+
 ```bash
-pip install fastapi uvicorn python-multipart
 python3 web.py
 ```
 Open http://127.0.0.1:8080
+
+**Features:**
+- Push-to-talk voice input (browser `MediaRecorder` → Whisper STT)
+- TTS playback of tutor responses (Piper or OpenAI)
+- Text input fallback
+- Multi-user support (cookie-keyed sessions, per-user data isolation)
+- Invite-code auth (set `FALA_INVITE_CODES` env var)
+- Mobile-friendly (works on phone browsers)
+
+**Docker:**
+
+```bash
+docker build -t fala .
+docker run -p 8080:8080 \
+  -e FALA_API_KEY=gsk_... \
+  -e FALA_BASE_URL=https://api.groq.com/openai/v1 \
+  -e FALA_MODEL=llama-3.3-70b-versatile \
+  -e FALA_INVITE_CODES=alex-beta-1,tester-2 \
+  fala
+```
+
+See [`docs/deploy.md`](docs/deploy.md) for Cloud Run deployment.
 
 ---
 
@@ -161,6 +186,7 @@ FALA_TTS=piper
 | `FALA_TTS` | `openai` | `openai` or `piper` |
 | `FALA_TTS_VOICE` | `alloy` | Voice name (OpenAI only) |
 | `FALA_STT_MODEL` | `base` | Whisper model size |
+| `FALA_INVITE_CODES` | (empty = no auth) | Comma-separated invite codes for web app auth |
 
 ---
 
@@ -199,9 +225,8 @@ Spaced repetition (SM-2) runs behind the scenes.
 - **Persistent memory** — rolling summary across unlimited sessions
 - **CEFR vocabulary breakdown** — A1/A2/B1/B2+ bands via frequency list
 - **SRS health report** — stats at session end and via `/stats`
-- **Web prototype** — `python3 web.py` at http://127.0.0.1:8080
-- **56 automated tests** — pytest, CI via GitHub Actions
-- **77 tests** — pytest, 18 added in the daily-driver trust pass
+- **Web app with voice** — `python3 web.py`, push-to-talk, multi-user, Docker-ready
+- **103 automated tests** — pytest, CI via GitHub Actions
 
 ---
 
@@ -226,6 +251,23 @@ This release closes the gap between "demo works" and "I'd trust it with 200 hour
 
 ---
 
+## v0.3 — Voice Web App (July 2026)
+
+Turns FALA from a CLI-only tool into a deployable web app with voice conversation, ready for beta testers.
+
+| Area | Before | After |
+|------|--------|-------|
+| **Web app** | Minimal text-only prototype (single global session) | Full app: voice, multi-user, auth, Docker-ready |
+| **Voice over HTTP** | CLI-only (`arecord`/`mpv` subprocess) | `/stt` + `/tts` endpoints, browser `MediaRecorder`, push-to-talk |
+| **Multi-user** | Single global engine | Cookie-keyed sessions, per-user data isolation (`data/users/<id>/`) |
+| **Auth** | None | Invite-code gate (`FALA_INVITE_CODES` env var) |
+| **Deployment** | Run locally only | Dockerfile + Cloud Run deploy guide |
+| **Tests** | 77 | **103** (+26: multi-user isolation, voice endpoints, auth) |
+
+**3 commits:** multi-user foundation → voice loop → auth + Docker.
+
+---
+
 ## Running tests
 
 ```bash
@@ -243,14 +285,16 @@ fala/
 ├── conversation.py      # Conversation engine, prompts, SRS feedback
 ├── audio.py             # STT (Whisper) + TTS (Piper/OpenAI)
 ├── progress.py          # Rolling summary, SM-2 SRS, CEFR stats
-├── web.py               # Web prototype (FastAPI)
+├── web.py               # Web app — FastAPI, voice, multi-user, auth
 ├── prompts/
 │   ├── system.md        # Tutor personality and pedagogical rules
 │   └── warmup.md        # Warm-up template
-├── tests/               # 77 tests — pytest, CI via GitHub Actions
+├── tests/               # 103 tests — pytest, CI via GitHub Actions
+├── Dockerfile # Container image for Cloud Run / Docker
 ├── docs/
 │   ├── agents/          # Wayfinding and agent infrastructure
 │   ├── research/        # TTS/STT, conversation UX, evaluation
+│   ├── deploy.md        # Docker + Cloud Run deployment guide
 │   └── architecture.md
 └── data/                # Auto-created on first run
     ├── summary.md       # Rolling session summary
@@ -265,7 +309,7 @@ fala/
 
 ## Design decisions
 
-- **CLI over web/mobile** — low friction, works in any terminal
+- **CLI and web** — CLI for personal use, web app for beta testers with voice + multi-user
 - **Hybrid audio** — local Whisper for STT; Piper (local) or OpenAI (cloud) for TTS
 - **File-based persistence** — human-readable markdown, grep-friendly
 - **LLM-assisted spaced repetition** — model assesses confidence, SM-2 handles timing
