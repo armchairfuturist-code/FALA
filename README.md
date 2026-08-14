@@ -74,6 +74,7 @@ pip install piper-tts
 ```
 
 **Best free setup:** Groq (🧠 brain) + Piper (🗣️ voice) = $0, no credit card.
+**Best hosted setup (web beta):** Groq (🧠 brain + STT, one key) + Azure (`FALA_TTS=azure`) = free tiers, dedicated pt-PT neural voice.
 
 ### Audio
 - **TTS (tutor speaks)**: Piper (local, free) by default — `.env.example` sets `FALA_TTS=piper`. Just `pip install piper-tts`.
@@ -86,10 +87,10 @@ pip install piper-tts
 - Sessions are saved automatically. Stop anytime with `quit` and pick up later
 
 ### Known limitations
-- Piper (tugão) is the only free local pt-PT voice — quality is medium but serviceable
+- Piper (tugão) is the only free local pt-PT voice — quality is medium but serviceable; for the hosted web app use `FALA_TTS=azure` (dedicated pt-PT neural voices, free tier)
 - Pronunciation feedback only works when you **speak** (voice input), not when you type
-- Cloud Run filesystem is ephemeral — user data resets on redeploy (needs persistent volume)
-- Piper TTS needs system deps not in the Docker image (use `FALA_TTS=openai` for hosted)
+- Cloud Run filesystem is ephemeral — user data resets on redeploy unless you mount a persistent volume (see `docs/deploy.md`)
+- Piper TTS needs system deps not in the Docker image (use `FALA_TTS=azure` or `openai` for hosted)
 - No streaming/VAD yet — push-to-talk only (hands-free is a planned M2 improvement)
 
 ---
@@ -122,6 +123,7 @@ Edit `.env` (copy from `.env.example` first):
 | Option | How | Quality | Cost | Offline |
 |--------|-----|---------|------|---------|
 | **Piper** (default in .env.example) | `pip install piper-tts` | Medium (dedicated pt-PT) | Free | ✅ |
+| **Azure** (best for hosted) | Set `FALA_TTS=azure` + `FALA_AZURE_KEY` | High (dedicated pt-PT neural voices: Fernanda/Raquel/Duarte) | Free tier ~0.5M chars/mo | ❌ |
 | **OpenAI** (cloud) | Set `FALA_TTS=openai` in `.env` | Good (English-optimised) | Per-character | ❌ |
 | **None** | Ignore audio errors | — | — | ✅ |
 
@@ -148,7 +150,9 @@ Open http://127.0.0.1:8080
 - TTS playback of tutor responses (Piper or OpenAI)
 - Text input fallback
 - Multi-user support (cookie-keyed sessions, per-user data isolation)
-- Invite-code auth (set `FALA_INVITE_CODES` env var)
+- Invite-code auth (set `FALA_INVITE_CODES` env var) — gates every endpoint, including `/stt` and `/tts`
+- Rate limiting on cost-bearing endpoints (`FALA_RATE_LIMIT_PER_MIN`, default 30/min)
+- Refresh-safe: your conversation is checkpointed to disk after every turn, so a page refresh or server restart resumes where you left off (the transcript is re-rendered from `GET /history`)
 - Mobile-friendly (works on phone browsers)
 
 **Docker:**
@@ -183,10 +187,15 @@ FALA_TTS=piper
 | `FALA_API_KEY` | `$OPENAI_API_KEY` | LLM API key |
 | `FALA_BASE_URL` | `https://api.openai.com/v1` | LLM API base URL |
 | `FALA_MODEL` | `gpt-4o` | LLM model to use |
-| `FALA_TTS` | `openai` | `openai` or `piper` |
+| `FALA_TTS` | `openai` | `openai`, `piper`, or `azure` |
 | `FALA_TTS_VOICE` | `alloy` | Voice name (OpenAI only) |
-| `FALA_STT_MODEL` | `base` | Whisper model size |
+| `FALA_AZURE_KEY` | (empty) | Azure Speech key (for `FALA_TTS=azure`); also reads `AZURE_SPEECH_KEY` |
+| `FALA_AZURE_REGION` | `westeurope` | Azure Speech region (e.g. `northeurope`) |
+| `FALA_AZURE_VOICE` | `pt-PT-FernandaNeural` | Azure pt-PT voice (Fernanda/Raquel/Duarte) |
+| `FALA_STT_MODEL` | `base` | Whisper model size (local STT) |
+| `FALA_STT_API_MODEL` | auto | Cloud STT model; auto-uses Groq's `whisper-large-v3-turbo` when `FALA_BASE_URL` is Groq |
 | `FALA_INVITE_CODES` | (empty = no auth) | Comma-separated invite codes for web app auth |
+| `FALA_RATE_LIMIT_PER_MIN` | `30` | Web rate limit — requests/min per session/IP on `/message`, `/stt`, `/tts`, `/auth` |
 
 ---
 

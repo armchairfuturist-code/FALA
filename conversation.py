@@ -44,6 +44,7 @@ class ConversationEngine:
         self.vocabulary = load_vocabulary(paths=self.paths)
         self.messages: list[ChatCompletionMessageParam] = []
         self.session_log: list[str] = []
+        self.history: list[dict] = []  # [{role: user|tutor, content}] for the web UI
         self.new_words: list[dict] = []
         self.session_start = datetime.now()
         self._warmup_done = False
@@ -123,6 +124,7 @@ class ConversationEngine:
         )
         self.messages.append({"role": "user", "content": content})
         response = self._call_llm()
+        self.history.append({"role": "tutor", "content": response})
         self._log("system", "(warm-up started)")
         self._log("assistant", response)
         # Replace the warmup template with a concise context marker so the LLM
@@ -137,6 +139,7 @@ class ConversationEngine:
                 ),
             }
         self._warmup_done = True
+        self.save_checkpoint()
         return response
 
     def user_message(self, text: str, is_voice: bool = False) -> str:
@@ -156,14 +159,21 @@ class ConversationEngine:
 
         prefix = "[voice] " if is_voice else ""
         self.messages.append({"role": "user", "content": f"{prefix}{text}"})
+        self.history.append({"role": "user", "content": text})
         self._log("user", f"{prefix}{text}")
 
         response = self._call_llm()
         self.messages.append({"role": "assistant", "content": response})
+        self.history.append({"role": "tutor", "content": response})
         self._log("assistant", response)
 
         self._extract_vocab_from_exchange(text, response)
+        self.save_checkpoint()
         return response
+
+    def get_history(self) -> list[dict]:
+        """Return the conversation transcript for display (user/tutor turns)."""
+        return list(self.history)
 
     def _call_llm(self) -> str:
         resp = self.client.chat.completions.create(
@@ -238,6 +248,56 @@ class ConversationEngine:
 
     def _log(self, role: str, text: str):
         self.session_log.append(f"[{role}] {text}")
+
+    # ------------------------------------------------------------------
+    # Session checkpoints — durable in-progress state so a web session can
+    # survive a server restart or a page refresh (file-based, JSON).
+    # ------------------------------------------------------------------
+
+    CHECKPOINT_FILENAME = "session_checkpoint.json"
+
+    @property
+    def checkpoint_path(self):
+        """Path of this session's checkpoint file (per-user data dir)."""
+        return self.paths.data_dir / self.CHECKPOINT_FILENAME
+
+    def has_checkpoint(self) -> bool:
+        return self.checkpoint_path.exists()
+
+    def save_checkpoint(self):
+        """Persist in-progress session state so it can be restored later."""
+        self.checkpoint_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "session_start": self.session_start.isoformat(),
+                    "warmup_done": self._warmup_done,
+                    "messages": self.messages,
+                    "history": self.history,
+                    "new_words": self.new_words,
+                    "vocabulary": self.vocabulary,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+
+    def load_checkpoint(self) -> bool:
+        """Restore session state from a checkpoint file. Returns True if restored."""
+        if not self.has_checkpoint():
+            return False
+        data = json.loads(self.checkpoint_path.read_text())
+        self.session_start = datetime.fromisoformat(data["session_start"])
+        self.messages = data["messages"]
+        self.history = data.get("history", [])
+        self.new_words = data["new_words"]
+        self.vocabulary = data["vocabulary"]
+        self._warmup_done = data["warmup_done"]
+        return True
+
+    def clear_checkpoint(self):
+        """Remove the checkpoint file (e.g. after the session is saved)."""
+        self.checkpoint_path.unlink(missing_ok=True)
 
     def end_session(self) -> str:
         save_vocabulary(self.vocabulary, paths=self.paths)
@@ -323,6 +383,9 @@ class ConversationEngine:
             f" | Mature: {report['mature_words']}"
             f" | Avg confidence: {report['average_confidence']:.0%}"
         )
+
+        # Session fully saved — drop the in-progress checkpoint.
+        self.clear_checkpoint()
 
         return (
             f"Session saved. {word_count} new words added, "

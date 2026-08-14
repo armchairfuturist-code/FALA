@@ -1,5 +1,6 @@
 """Tests for conversation.py — ConversationEngine."""
 
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -554,3 +555,114 @@ class TestEndSession:
         assert "0 words learned" in result
         assert "Session saved" in result
         mock_save.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Session checkpoints
+# ---------------------------------------------------------------------------
+
+
+class TestCheckpoint:
+    """Checkpoint save/restore/clear + lifecycle hooks."""
+
+    def _make_engine(self, tmp_path, vocab=None):
+        from config import UserPaths
+        from conversation import ConversationEngine
+
+        data_dir = tmp_path / "user-data"
+        sessions = data_dir / "sessions"
+        records = data_dir / "records"
+        sessions.mkdir(parents=True, exist_ok=True)
+        records.mkdir(parents=True, exist_ok=True)
+        paths = UserPaths(
+            user_id="u1",
+            data_dir=data_dir,
+            summary=data_dir / "summary.md",
+            vocabulary=data_dir / "vocabulary.md",
+            sessions=sessions,
+            records=records,
+        )
+
+        with patch("conversation.ConversationEngine._build_system_prompt"):
+            with patch("conversation.load_summary", return_value="- Current level: A0"):
+                with patch("conversation.load_vocabulary", return_value=vocab or []):
+                    with patch("conversation.OpenAI"):
+                        engine = ConversationEngine()
+        engine.paths = paths
+        return engine
+
+    def test_no_checkpoint_initially(self, tmp_path):
+        engine = self._make_engine(tmp_path)
+        assert not engine.has_checkpoint()
+
+    def test_save_then_load_roundtrip(self, tmp_path):
+        engine = self._make_engine(tmp_path)
+        engine.session_start = datetime(2026, 8, 6, 10, 30, 0)
+        engine.messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "assistant", "content": "Olá!"},
+        ]
+        engine.new_words = [{"word": "olá", "english": "hello", "context": "Olá!"}]
+        engine.vocabulary = [
+            {
+                "word": "obrigado",
+                "english": "thank you",
+                "context": "",
+                "ease": 2.5,
+                "interval": 1,
+                "last_reviewed": "2026-08-06",
+                "confidence": 0.3,
+                "needs_review": True,
+            }
+        ]
+        engine._warmup_done = True
+
+        engine.save_checkpoint()
+        assert engine.has_checkpoint()
+
+        fresh = self._make_engine(tmp_path)
+        assert fresh.messages != engine.messages  # untouched until load
+        assert fresh.load_checkpoint() is True
+        assert fresh.session_start == engine.session_start
+        assert fresh.messages == engine.messages
+        assert fresh.new_words == engine.new_words
+        assert fresh.vocabulary == engine.vocabulary
+        assert fresh._warmup_done is True
+
+    def test_load_without_checkpoint_returns_false(self, tmp_path):
+        engine = self._make_engine(tmp_path)
+        assert engine.load_checkpoint() is False
+
+    def test_clear_checkpoint_removes_file(self, tmp_path):
+        engine = self._make_engine(tmp_path)
+        engine.save_checkpoint()
+        engine.clear_checkpoint()
+        assert not engine.has_checkpoint()
+
+    def test_start_warmup_saves_checkpoint(self, tmp_path):
+        engine = self._make_engine(tmp_path)
+        with patch("conversation.ConversationEngine._call_llm", return_value="Bem-vindo!"):
+            engine.start_warmup()
+        assert engine.has_checkpoint()
+
+    def test_user_message_saves_checkpoint(self, tmp_path):
+        engine = self._make_engine(tmp_path)
+        with patch("conversation.ConversationEngine._call_llm", return_value="Olá!"):
+            engine.start_warmup()
+        with patch("conversation.ConversationEngine._call_llm", return_value="Ótimo!"):
+            engine.user_message("oi")
+        assert engine.has_checkpoint()
+
+    def test_end_session_clears_checkpoint(self, tmp_path):
+        engine = self._make_engine(tmp_path)
+        engine._warmup_done = True
+        engine.save_checkpoint()
+        assert engine.has_checkpoint()
+
+        with patch("conversation.save_summary"):
+            with patch("conversation.save_vocabulary"):
+                with patch("conversation.save_learning_record"):
+                    result = engine.end_session()
+
+        assert "Session saved" in result
+        assert not engine.has_checkpoint()

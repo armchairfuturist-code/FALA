@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
-"""Web prototype for FALA — wraps ConversationEngine in a chat UI."""
+"""Web app for FALA — wraps ConversationEngine in a chat UI with voice.
 
+Design notes:
+- Blocking engine/audio work runs in the threadpool (sync `def` handlers) or
+  `asyncio.to_thread` so one slow LLM call cannot stall the event loop.
+- In-progress sessions are checkpointed to disk per user, so they survive a
+  server restart or a page refresh (`GET /history` restores the transcript).
+- Voice endpoints are gated behind the same session auth as everything else.
+"""
+
+import asyncio
+import logging
 import os
 import re
 import tempfile
@@ -10,11 +20,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, File, Form, Request, Response, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse
 
 from audio import speech_to_text, text_to_speech
+from config import DATA_DIR
 from conversation import ConversationEngine
+
+logger = logging.getLogger("fala.web")
 
 # Invite-code auth: when FALA_INVITE_CODES is set, only holders of valid
 # codes can use the app. Each code doubles as a user_id for per-user data.
@@ -23,11 +36,52 @@ AUTH_ENABLED = bool(AUTH_CODES)
 
 SESSION_COOKIE = "fala_session"
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+COOKIE_MAX_AGE = 60 * 60 * 24 * 60  # 60 days
+
+# Simple in-memory sliding-window rate limit (per session id, else per IP).
+RATE_LIMIT_PER_MIN = int(os.getenv("FALA_RATE_LIMIT_PER_MIN", "30"))
+_rate_windows: dict[str, list[float]] = {}
+
+
+def _rate_limited(key: str) -> bool:
+    """Record a hit for `key`; return True if the caller is over the limit."""
+    now = time.time()
+    window = [t for t in _rate_windows.get(key, []) if now - t < 60]
+    if len(window) >= RATE_LIMIT_PER_MIN:
+        _rate_windows[key] = window
+        return True
+    window.append(now)
+    _rate_windows[key] = window
+    return False
+
+
+def _rate_key(request: Request) -> str:
+    sid = request.cookies.get(SESSION_COOKIE, "")
+    if sid:
+        return f"sid:{sid}"
+    addr = request.client.host if request.client else "unknown"
+    return f"ip:{addr}"
+
+
+def _checkpoint_exists(user_id: str) -> bool:
+    """Cheap existence check for a user's session checkpoint (no dir creation)."""
+    if user_id == "default":
+        return (DATA_DIR / ConversationEngine.CHECKPOINT_FILENAME).exists()
+    return (DATA_DIR / "users" / user_id / ConversationEngine.CHECKPOINT_FILENAME).exists()
+
+
+# ---------------------------------------------------------------------------
+# Session state
+# ---------------------------------------------------------------------------
 
 
 @dataclass
 class SessionState:
-    """Per-browser-session state. user_id binds the session to on-disk data."""
+    """Per-browser-session state. user_id binds the session to on-disk data.
+
+    Only `engine` is kept in RAM as a cache; the durable truth for an
+    in-progress session is the user's checkpoint file on disk.
+    """
 
     user_id: str
     engine: ConversationEngine | None = None
@@ -36,9 +90,25 @@ class SessionState:
     last_active: float = field(default_factory=time.time)
 
 
-# Keyed by the fala_session cookie.
-# TODO: add an idle-session reaper — this dict grows unbounded.
+# Keyed by the fala_session cookie. Entries are rebuilt from disk checkpoints
+# after a restart, so this is only a per-process cache — it is safe to drop
+# idle entries (see _reap_idle_sessions).
 _sessions: dict[str, SessionState] = {}
+
+IDLE_TIMEOUT = 3600  # seconds
+_last_prune: float = 0.0
+
+
+def _reap_idle_sessions():
+    """Drop RAM session entries idle too long (checkpoint survives on disk)."""
+    global _last_prune
+    now = time.time()
+    if now - _last_prune < 60:
+        return
+    _last_prune = now
+    stale = [sid for sid, st in _sessions.items() if now - st.last_active > IDLE_TIMEOUT]
+    for sid in stale:
+        del _sessions[sid]
 
 
 def get_session(request: Request, response: Response) -> SessionState | None:
@@ -55,17 +125,32 @@ def get_session(request: Request, response: Response) -> SessionState | None:
     state = _sessions.get(sid)
     if state is None:
         state = SessionState(user_id=user_id)
+        state.session_started = _checkpoint_exists(user_id)
         _sessions[sid] = state
     state.last_active = time.time()
-    response.set_cookie(SESSION_COOKIE, sid, httponly=True, samesite="lax")
+    _reap_idle_sessions()
+    response.set_cookie(
+        SESSION_COOKIE,
+        sid,
+        httponly=True,
+        samesite="lax",
+        secure=request.url.scheme == "https",
+        max_age=COOKIE_MAX_AGE,
+    )
     return state
 
 
 def get_engine(state: SessionState) -> ConversationEngine:
-    """Return (creating if needed) the engine for this session's user."""
+    """Return (creating if needed) the engine for this session's user.
+
+    If the session is already active on disk (checkpoint), the engine is
+    restored from it so the conversation continues where it left off.
+    """
     if state.engine is None:
         try:
             state.engine = ConversationEngine(user_id=state.user_id)
+            if state.session_started:
+                state.engine.load_checkpoint()
         except ValueError as e:
             raise RuntimeError(str(e)) from e
     return state.engine
@@ -133,7 +218,7 @@ HTML_PAGE = """<!DOCTYPE html>
   #chat { flex: 1; background: white; border: 1px solid #ddd;
     border-radius: 8px; padding: 1rem; overflow-y: auto; max-height: 70vh;
     margin-bottom: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
-  .msg { padding: 0.5rem 0.75rem; border-radius: 8px; max-width: 85%; }
+  .msg { padding: 0.5rem 0.75rem; border-radius: 8px; max-width: 85%; white-space: pre-wrap; }
   .tutor { background: #e3f2fd; align-self: flex-start; }
   .user { background: #e8f5e9; align-self: flex-end; }
   .sys  { background: #fff3e0; align-self: center; font-size: 0.85rem; }
@@ -184,15 +269,36 @@ function setStatus(text) {
  document.getElementById('status').textContent = text || '';
  }
 
- async function startWarmup() {
+async function api(url, opts) {
+  const r = await fetch(url, opts || {});
+  let data = null;
+  try { data = await r.json(); } catch (e) { /* non-JSON response */ }
+  if (!r.ok) {
+    addMsg((data && data.detail) || ('Request failed (' + r.status + ')'), 'sys');
+    return null;
+  }
+  return data;
+}
+
+async function startWarmup() {
   document.getElementById('status').textContent = 'Starting warm-up...';
-  const r = await fetch('/start', { method: 'POST' });
-  const data = await r.json();
+  const data = await api('/start', { method: 'POST' });
+  if (!data) return;
   document.getElementById('status').textContent = data.status || '';
-  addMsg(data.response, 'tutor');
+  if (data.resumed) {
+    const hist = await api('/history');
+    if (hist && Array.isArray(hist.messages)) {
+      for (const m of hist.messages) {
+        addMsg(m.content, m.role === 'user' ? 'user' : 'tutor');
+      }
+    }
+    setStatus('Session resumed.');
+  } else {
+    addMsg(data.response, 'tutor');
+    playTTS(data.response);
+  }
   started = true;
 }
- playTTS(data.response);
 
 async function toggleVoice() {
  if (isRecording) { mediaRecorder.stop(); return; }
@@ -222,8 +328,8 @@ async function toggleVoice() {
  const blob = new Blob(audioChunks, { type: 'audio/webm' });
  const fd = new FormData();
  fd.append('file', blob, 'voice.webm');
- const r = await fetch('/stt', { method: 'POST', body: fd });
- const data = await r.json();
+ const data = await api('/stt', { method: 'POST', body: fd });
+ if (!data) return;
  if (data.transcript) {
  document.getElementById('input').value = data.transcript;
  setStatus('heard: ' + data.transcript);
@@ -260,28 +366,27 @@ async function toggleVoice() {
   addMsg(text, 'user');
   document.getElementById('send').classList.add('loading');
  setStatus('thinking...');
-  const r = await fetch('/message', {
+  const data = await api('/message', {
     method: 'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
     body: 'text=' + encodeURIComponent(text),
   });
-  const data = await r.json();
   document.getElementById('send').classList.remove('loading');
+  if (!data) return;
   addMsg(data.response, 'tutor');
  setStatus('');
  playTTS(data.response);
 }
 
 async function getStats() {
-  const r = await fetch('/stats');
-  const data = await r.json();
-  addMsg(data.stats || 'No stats yet', 'sys');
+  const data = await api('/stats');
+  if (data) addMsg(data.stats || 'No stats yet', 'sys');
 }
 
 async function quitSession() {
   if (!started) return;
-  const r = await fetch('/quit', { method: 'POST' });
-  const data = await r.json();
+  const data = await api('/quit', { method: 'POST' });
+  if (!data) return;
   addMsg(data.response, 'sys');
   started = false;
   document.getElementById('status').textContent = 'Session ended. Refresh to start a new one.';
@@ -297,6 +402,18 @@ document.getElementById('input').addEventListener('keydown', e => {
 </html>"""
 
 
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; connect-src 'self'; "
+        "media-src 'self' blob:; img-src 'self' data:"
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     if AUTH_ENABLED:
@@ -306,28 +423,42 @@ async def index(request: Request):
     return HTML_PAGE
 
 
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+
+
 @app.post("/auth")
-async def authenticate(response: Response, code: str = Form(...)):
+def authenticate(request: Request, response: Response, code: str = Form(...)):
     """Validate an invite code and set the session cookie."""
+    if _rate_limited(_rate_key(request)):
+        raise HTTPException(status_code=429, detail="Too many requests. Try again in a minute.")
     code = code.strip()
     if code in AUTH_CODES:
-        response.set_cookie(SESSION_COOKIE, code, httponly=True, samesite="lax")
+        response.set_cookie(
+            SESSION_COOKIE,
+            code,
+            httponly=True,
+            samesite="lax",
+            secure=request.url.scheme == "https",
+            max_age=COOKIE_MAX_AGE,
+        )
         return {"ok": True}
     return {"ok": False, "error": "Invalid invite code"}
 
 
 @app.post("/start")
-async def start(request: Request, response: Response):
+def start(request: Request, response: Response):
     state = get_session(request, response)
     if state is None:
-        return {"response": "Not authenticated.", "status": "auth_required"}
+        raise HTTPException(status_code=401, detail="Not authenticated.")
     if state.session_started and not state.session_ended:
-        return {
-            "response": "Session already started. Use /quit first to start a new one.",
-            "status": "already active",
-        }
+        # Idempotent resume — the engine (possibly restored from checkpoint)
+        # is already warmed up; return current status instead of re-warming up.
+        eng = get_engine(state)
+        return {"response": "Session resumed.", "status": eng.get_status_report(), "resumed": True}
     if state.session_ended:
-        # Reset for new session
+        # Reset for a new session
         state.engine = None
         state.session_ended = False
     try:
@@ -336,18 +467,36 @@ async def start(request: Request, response: Response):
         state.session_started = True
         return {"response": resp, "status": eng.get_status_report()}
     except Exception as e:
-        return {"response": f"Error: {e}", "status": "error"}
+        logger.exception("start failed")
+        return {
+            "response": "Something went wrong starting the session.",
+            "error": {"code": "internal_error", "message": str(e)},
+        }
+
+
+@app.get("/history")
+def history(request: Request, response: Response):
+    """Return the current session's transcript (for page refresh / resume)."""
+    state = get_session(request, response)
+    if state is None:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+    if not state.session_started or state.session_ended:
+        return {"messages": []}
+    eng = get_engine(state)
+    return {"messages": eng.get_history()}
 
 
 @app.post("/message")
-async def message(request: Request, response: Response, text: str = Form(...)):
+def message(request: Request, response: Response, text: str = Form(...)):
     state = get_session(request, response)
     if state is None:
-        return {"response": "Not authenticated."}
-    if not state.session_started or state.session_ended or state.engine is None:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+    if _rate_limited(_rate_key(request)):
+        raise HTTPException(status_code=429, detail="Too many requests. Try again in a minute.")
+    if not state.session_started or state.session_ended:
         return {"response": "No active session. Call /start first."}
-    eng = state.engine
     try:
+        eng = get_engine(state)
         if text.strip().lower() in ("quit", "exit", "sair"):
             result = eng.end_session()
             state.session_ended = True
@@ -356,58 +505,78 @@ async def message(request: Request, response: Response, text: str = Form(...)):
         resp = eng.user_message(text)
         return {"response": resp}
     except Exception as e:
-        return {"response": f"Error: {e}"}
+        logger.exception("message failed")
+        return {
+            "response": "Something went wrong. Please try again.",
+            "error": {"code": "internal_error", "message": str(e)},
+        }
 
 
 @app.get("/stats")
-async def stats(request: Request, response: Response):
+def stats(request: Request, response: Response):
     state = get_session(request, response)
     if state is None:
-        return {"stats": "Not authenticated."}
+        raise HTTPException(status_code=401, detail="Not authenticated.")
     try:
         eng = get_engine(state)
         return {"stats": eng.get_stats()}
     except Exception as e:
+        logger.exception("stats failed")
         return {"stats": f"Error: {e}"}
 
 
 @app.post("/quit")
-async def quit_(request: Request, response: Response):
+def quit_(request: Request, response: Response):
     state = get_session(request, response)
     if state is None:
-        return {"response": "Not authenticated."}
-    if not state.session_started or state.session_ended or state.engine is None:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+    if not state.session_started or state.session_ended:
         return {"response": "No active session to quit."}
-    eng = state.engine
     try:
+        eng = get_engine(state)
         result = eng.end_session()
         state.session_ended = True
         state.engine = None
         return {"response": result}
     except Exception as e:
-        return {"response": f"Error: {e}"}
+        logger.exception("quit failed")
+        return {
+            "response": "Something went wrong ending the session.",
+            "error": {"code": "internal_error", "message": str(e)},
+        }
 
 
 @app.post("/stt")
-async def stt(file: UploadFile = File(...)):
-    """Transcribe an audio blob to text (stateless)."""
+async def stt(request: Request, response: Response, file: UploadFile = File(...)):
+    """Transcribe an audio blob to text (stateless, auth-gated)."""
+    state = get_session(request, response)
+    if state is None:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+    if _rate_limited(_rate_key(request)):
+        raise HTTPException(status_code=429, detail="Too many requests. Try again in a minute.")
     suffix = Path(file.filename).suffix if file.filename else ".webm"
     tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
     tmp.write(await file.read())
     tmp.close()
     path = Path(tmp.name)
     try:
-        transcript = speech_to_text(path)
+        transcript = await asyncio.to_thread(speech_to_text, path)
         return {"transcript": transcript or ""}
     except Exception as e:
+        logger.exception("stt failed")
         return {"transcript": "", "error": str(e)}
     finally:
         path.unlink(missing_ok=True)
 
 
 @app.post("/tts")
-async def tts(text: str = Form(...)):
-    """Synthesize text to audio bytes (stateless)."""
+def tts(request: Request, response: Response, text: str = Form(...)):
+    """Synthesize text to audio bytes (stateless, auth-gated)."""
+    state = get_session(request, response)
+    if state is None:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+    if _rate_limited(_rate_key(request)):
+        raise HTTPException(status_code=429, detail="Too many requests. Try again in a minute.")
     try:
         path = text_to_speech(text)
         if path is None:
@@ -417,6 +586,7 @@ async def tts(text: str = Form(...)):
         path.unlink(missing_ok=True)
         return Response(content=data, media_type=content_type)
     except Exception as e:
+        logger.exception("tts failed")
         return {"error": str(e)}
 
 

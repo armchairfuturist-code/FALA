@@ -1,3 +1,4 @@
+import html
 import subprocess
 import tempfile
 import urllib.request
@@ -5,7 +6,18 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from config import DATA_DIR, LLM_API_KEY, LLM_BASE_URL, STT_MODEL, TTS_PROVIDER, TTS_VOICE
+from config import (
+    AZURE_SPEECH_KEY,
+    AZURE_SPEECH_REGION,
+    AZURE_TTS_VOICE,
+    DATA_DIR,
+    LLM_API_KEY,
+    LLM_BASE_URL,
+    STT_API_MODEL,
+    STT_MODEL,
+    TTS_PROVIDER,
+    TTS_VOICE,
+)
 
 # ---------------------------------------------------------------------------
 # Piper voice paths
@@ -107,6 +119,53 @@ def _openai_text_to_speech(text: str) -> Path | None:
 
 
 # ---------------------------------------------------------------------------
+# Azure Speech TTS (dedicated pt-PT neural voices)
+# ---------------------------------------------------------------------------
+
+_AZURE_TTS_URL = "https://{region}.tts.speech.microsoft.com/cognitiveservices/v1"
+_AZURE_OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3"
+
+
+def _azure_text_to_speech(text: str) -> Path | None:
+    """Synthesize speech using Azure Speech's pt-PT neural voices.
+
+    Uses the REST API (no SDK dependency). Requires FALA_AZURE_KEY and
+    FALA_AZURE_REGION (default: westeurope).
+    """
+    if not AZURE_SPEECH_KEY:
+        print("[Azure TTS error: FALA_AZURE_KEY not set]")
+        return None
+
+    ssml = (
+        '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="pt-PT">'
+        f'<voice name="{AZURE_TTS_VOICE}">{html.escape(text)}</voice></speak>'
+    )
+    url = _AZURE_TTS_URL.format(region=AZURE_SPEECH_REGION)
+    req = urllib.request.Request(
+        url,
+        data=ssml.encode("utf-8"),
+        method="POST",
+        headers={
+            "Ocp-Apim-Subscription-Key": AZURE_SPEECH_KEY,
+            "Content-Type": "application/ssml+xml",
+            "X-Microsoft-OutputFormat": _AZURE_OUTPUT_FORMAT,
+            "User-Agent": "FALA",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = resp.read()
+    except Exception as e:
+        print(f"[Azure TTS error: {e}]")
+        return None
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+    tmp.write(data)
+    tmp.close()
+    return Path(tmp.name)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -115,6 +174,8 @@ def text_to_speech(text: str) -> Path | None:
     """Synthesize speech using the configured TTS provider."""
     if TTS_PROVIDER == "piper":
         return _piper_text_to_speech(text)
+    if TTS_PROVIDER == "azure":
+        return _azure_text_to_speech(text)
     return _openai_text_to_speech(text)
 
 
@@ -148,6 +209,10 @@ def get_tts_provider_info() -> str:
         if PIPER_MODEL_PATH.exists():
             return "TTS: Piper (local tugão pt-PT)"
         return "TTS: Piper (not downloaded)"
+    if TTS_PROVIDER == "azure":
+        if AZURE_SPEECH_KEY:
+            return f"TTS: Azure (pt-PT neural, voice: {AZURE_TTS_VOICE})"
+        return "TTS: Azure (no key set — set FALA_AZURE_KEY)"
     return f"TTS: OpenAI (cloud, voice: {TTS_VOICE})"
 
 
@@ -170,7 +235,7 @@ def speech_to_text(audio_path: Path) -> str | None:
     try:
         with open(audio_path, "rb") as f:
             resp = client.audio.transcriptions.create(
-                model="whisper-1",
+                model=STT_API_MODEL,
                 file=f,
                 language="pt",
             )

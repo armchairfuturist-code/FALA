@@ -18,6 +18,10 @@ def mock_engine():
         instance.end_session.return_value = "Até logo!"
         instance.get_status_report.return_value = "Level: A1, Sessions: 0"
         instance.get_stats.return_value = "📊 1 word · 1 review due"
+        instance.get_history.return_value = [
+            {"role": "tutor", "content": "Bem-vindo! Vamos começar."},
+            {"role": "user", "content": "olá"},
+        ]
         mock_cls.return_value = instance
         yield instance
 
@@ -28,6 +32,7 @@ def reset_web_globals():
     import web
 
     web._sessions.clear()
+    web._rate_windows.clear()
     yield
 
 
@@ -54,13 +59,13 @@ class TestStart:
         assert "Level: A1" in data["status"]
         mock_engine.start_warmup.assert_called_once()
 
-    def test_double_start_returns_already_active(self, client, mock_engine):
+    def test_double_start_is_idempotent_resume(self, client, mock_engine):
         client.post("/start")  # first call
         resp = client.post("/start")  # second call
         data = resp.json()
-        assert "already started" in data["response"].lower()
-        assert data["status"] == "already active"
-        # start_warmup should only be called once
+        assert data["resumed"] is True
+        assert "resumed" in data["response"].lower()
+        # start_warmup should only be called once (no double warm-up)
         mock_engine.start_warmup.assert_called_once()
 
     def test_start_after_quit_allows_new_session(self, client, mock_engine):
@@ -259,9 +264,185 @@ class TestAuth:
 
     def test_unauthenticated_start_rejected(self, client, auth_enabled):
         resp = client.post("/start")
-        assert resp.json()["status"] == "auth_required"
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "Not authenticated."
 
     def test_authenticated_start_works(self, client, auth_enabled, mock_engine):
         client.cookies.set("fala_session", "test-code-1")
         resp = client.post("/start")
         assert "Bem-vindo" in resp.json()["response"]
+
+
+class TestHistory:
+    def test_history_empty_before_start(self, client, mock_engine):
+        resp = client.get("/history")
+        assert resp.json() == {"messages": []}
+
+    def test_history_returns_transcript(self, client, mock_engine):
+        client.post("/start")
+        resp = client.get("/history")
+        data = resp.json()
+        assert [m["role"] for m in data["messages"]] == ["tutor", "user"]
+
+    def test_history_empty_after_quit(self, client, mock_engine):
+        client.post("/start")
+        client.post("/quit")
+        resp = client.get("/history")
+        assert resp.json() == {"messages": []}
+
+
+class TestRateLimit:
+    def test_rate_limit_returns_429(self, client, mock_engine, monkeypatch):
+        import web
+
+        monkeypatch.setattr(web, "RATE_LIMIT_PER_MIN", 3)
+        client.post("/start")
+        for _ in range(3):
+            resp = client.post("/message", data={"text": "olá"})
+            assert resp.status_code == 200
+        resp = client.post("/message", data={"text": "olá de novo"})
+        assert resp.status_code == 429
+        assert "Too many requests" in resp.json()["detail"]
+
+    def test_rate_limit_recovers_after_window(self, client, mock_engine, monkeypatch):
+        import web
+
+        monkeypatch.setattr(web, "RATE_LIMIT_PER_MIN", 2)
+        client.post("/start")
+        client.post("/message", data={"text": "a"})
+        client.post("/message", data={"text": "b"})
+        assert client.post("/message", data={"text": "c"}).status_code == 429
+        # Rewind the recorded timestamps past the 60s window
+        web._rate_windows = {k: [t - 61 for t in v] for k, v in web._rate_windows.items()}
+        assert client.post("/message", data={"text": "d"}).status_code == 200
+
+
+class TestHealthz:
+    def test_healthz(self, client):
+        resp = client.get("/healthz")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}
+
+
+class TestSecurityHeaders:
+    def test_csp_and_nosniff_on_html(self, client):
+        resp = client.get("/")
+        assert "Content-Security-Policy" in resp.headers
+        assert "default-src 'self'" in resp.headers["Content-Security-Policy"]
+        assert resp.headers["X-Content-Type-Options"] == "nosniff"
+
+    def test_cookie_flags(self, client, mock_engine):
+        client.post("/start")
+        set_cookie = client.cookies.get("fala_session")
+        assert set_cookie  # cookie is set
+        # Verify flags via a fresh response's Set-Cookie header
+        resp = client.get("/stats")
+        header = resp.headers.get("set-cookie", "")
+        assert "HttpOnly" in header
+        assert "SameSite=lax" in header
+        assert "Max-Age" in header
+        assert "Secure" not in header  # plain http in tests
+
+
+class TestVoiceAuthGate:
+    @pytest.fixture
+    def auth_enabled(self):
+        import web
+
+        old_codes, old_enabled = web.AUTH_CODES, web.AUTH_ENABLED
+        web.AUTH_CODES = {"test-code-1", "test-code-2"}
+        web.AUTH_ENABLED = True
+        web._sessions.clear()
+        yield
+        web.AUTH_CODES = old_codes
+        web.AUTH_ENABLED = old_enabled
+
+    def test_stt_requires_auth(self, client, auth_enabled):
+        resp = client.post("/stt", files={"file": ("v.webm", b"x", "audio/webm")})
+        assert resp.status_code == 401
+
+    def test_tts_requires_auth(self, client, auth_enabled):
+        resp = client.post("/tts", data={"text": "olá"})
+        assert resp.status_code == 401
+
+    def test_stt_works_when_authenticated(self, client, auth_enabled):
+        client.cookies.set("fala_session", "test-code-1")
+        with patch("web.speech_to_text", return_value="olá tudo bem"):
+            resp = client.post("/stt", files={"file": ("v.webm", b"x", "audio/webm")})
+        assert resp.status_code == 200
+        assert resp.json()["transcript"] == "olá tudo bem"
+
+    def test_tts_works_when_authenticated(self, client, auth_enabled):
+        client.cookies.set("fala_session", "test-code-1")
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            f.write(b"fake-mp3")
+            tmp = Path(f.name)
+        with patch("web.text_to_speech", return_value=tmp):
+            resp = client.post("/tts", data={"text": "olá"})
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "audio/mpeg"
+
+
+class TestResume:
+    """End-to-end: a session checkpointed to disk survives a 'restart'."""
+
+    def test_resume_after_restart(self, temp_data_dir, monkeypatch):
+        import config
+        import conversation
+        import web
+
+        monkeypatch.setattr(web, "DATA_DIR", config.DATA_DIR)
+        monkeypatch.setattr(conversation, "LLM_API_KEY", "sk-test")
+        monkeypatch.setattr(conversation, "OpenAI", MagicMock())
+        replies = iter(["Bem-vindo! Vamos começar.", "Olá! Tudo bem?"])
+        monkeypatch.setattr(
+            conversation.ConversationEngine, "_call_llm", lambda self: next(replies)
+        )
+
+        from web import app
+
+        # Phase 1: real session, warmup + one message, checkpoint written
+        client = TestClient(app)
+        r1 = client.post("/start")
+        assert "Bem-vindo" in r1.json()["response"]
+        client.post("/message", data={"text": "ola"})
+        sid = client.cookies.get("fala_session")
+        assert sid
+
+        # Phase 2: simulate server restart — RAM session store is gone
+        web._sessions.clear()
+
+        client2 = TestClient(app)
+        client2.cookies.set("fala_session", sid)
+
+        # History must be rebuilt from the on-disk checkpoint
+        hist = client2.get("/history")
+        assert hist.status_code == 200
+        msgs = hist.json()["messages"]
+        assert [m["role"] for m in msgs] == ["tutor", "user", "tutor"]
+        assert msgs[0]["content"] == "Bem-vindo! Vamos começar."
+
+        # /start resumes instead of re-running the warm-up
+        r2 = client2.post("/start")
+        assert r2.json()["resumed"] is True
+        assert "resumed" in r2.json()["response"].lower()
+
+    def test_quit_clears_checkpoint(self, temp_data_dir, monkeypatch):
+        import config
+        import conversation
+        import web
+
+        monkeypatch.setattr(web, "DATA_DIR", config.DATA_DIR)
+        monkeypatch.setattr(conversation, "LLM_API_KEY", "sk-test")
+        monkeypatch.setattr(conversation, "OpenAI", MagicMock())
+        monkeypatch.setattr(conversation.ConversationEngine, "_call_llm", lambda self: "Bem-vindo!")
+
+        from web import app
+
+        client = TestClient(app)
+        client.post("/start")
+        sid = client.cookies.get("fala_session")
+        assert web._checkpoint_exists(sid)
+
+        client.post("/quit")
+        assert not web._checkpoint_exists(sid)

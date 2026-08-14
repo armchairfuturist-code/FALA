@@ -95,6 +95,18 @@ TTS_VOICE = os.getenv("FALA_TTS_VOICE", "alloy")
 
 STT_MODEL = os.getenv("FALA_STT_MODEL", "base")
 
+# Cloud STT model used by the API fallback path in audio.py. Defaults to the
+# OpenAI model, but auto-switches to Groq's Whisper when FALA_BASE_URL points
+# at Groq (Groq does not serve "whisper-1").
+STT_API_MODEL = os.getenv("FALA_STT_API_MODEL") or (
+    "whisper-large-v3-turbo" if "groq" in LLM_BASE_URL.lower() else "whisper-1"
+)
+
+# Azure Speech (dedicated pt-PT neural voices) — used when FALA_TTS=azure.
+AZURE_SPEECH_KEY = os.getenv("FALA_AZURE_KEY") or os.getenv("AZURE_SPEECH_KEY", "")
+AZURE_SPEECH_REGION = os.getenv("FALA_AZURE_REGION", "westeurope")
+AZURE_TTS_VOICE = os.getenv("FALA_AZURE_VOICE", "pt-PT-FernandaNeural")
+
 GUARDRAILS = {
     "max_new_words_per_session": 5,
     "min_review_words_per_warmup": 3,

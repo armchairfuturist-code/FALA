@@ -61,6 +61,58 @@ class TestEnvVarDefaults:
 
         assert config.STT_MODEL == "base"
 
+    def test_stt_api_model_defaults_to_openai(self, clear_env):
+        import config
+
+        assert config.STT_API_MODEL == "whisper-1"
+
+    def test_stt_api_model_auto_detects_groq(self, clear_env):
+        os.environ["FALA_BASE_URL"] = "https://api.groq.com/openai/v1"
+        import importlib
+
+        import config
+
+        importlib.reload(config)
+        assert config.STT_API_MODEL == "whisper-large-v3-turbo"
+
+    def test_stt_api_model_override(self, clear_env):
+        os.environ["FALA_STT_API_MODEL"] = "my-custom-model"
+        import importlib
+
+        import config
+
+        importlib.reload(config)
+        assert config.STT_API_MODEL == "my-custom-model"
+
+    def test_azure_defaults(self, clear_env):
+        import config
+
+        assert config.AZURE_SPEECH_KEY == ""
+        assert config.AZURE_SPEECH_REGION == "westeurope"
+        assert config.AZURE_TTS_VOICE == "pt-PT-FernandaNeural"
+
+    def test_azure_env_overrides(self, clear_env):
+        os.environ["FALA_AZURE_KEY"] = "azure-key-123"
+        os.environ["FALA_AZURE_REGION"] = "northeurope"
+        os.environ["FALA_AZURE_VOICE"] = "pt-PT-RaquelNeural"
+        import importlib
+
+        import config
+
+        importlib.reload(config)
+        assert config.AZURE_SPEECH_KEY == "azure-key-123"
+        assert config.AZURE_SPEECH_REGION == "northeurope"
+        assert config.AZURE_TTS_VOICE == "pt-PT-RaquelNeural"
+
+    def test_azure_key_falls_back_to_azure_speech_key(self, clear_env):
+        os.environ["AZURE_SPEECH_KEY"] = "fallback-key"
+        import importlib
+
+        import config
+
+        importlib.reload(config)
+        assert config.AZURE_SPEECH_KEY == "fallback-key"
+
 
 class TestPaths:
     def test_project_dir_is_parent_of_config(self):
