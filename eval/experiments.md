@@ -54,5 +54,54 @@ against the rubric:
    → targets `learner_output`.
 3. Task-framed free conversation (checkable outcome) → targets `task_framing`.
 
-Re-run after Groq's daily token reset; keep all models identical to
-baseline-v1 (`openai/gpt-oss-20b`) for comparability.
+Groq pools stayed exhausted, so the A/B pair below ran on Venice
+`deepseek-v3.2` (tutor, learner, and judge identical). n=3 sessions — treat
+deltas as directional.
+
+### baseline-venice vs iter1-two-track-venice — DECISION: KEEP iteration 1
+
+| Criterion | baseline | iter1 | Δ |
+|---|---|---|---|
+| method_fidelity | 3.67 | 4.33 | +0.66 |
+| no_answer_reveal | 1.67 | 4.00 | **+2.33** |
+| task_framing | 3.67 | 4.33 | +0.66 |
+| conversational_brevity | 5.00 | 4.33 | −0.67 |
+| **Overall** | **4.25** | **4.62** | **+0.37** |
+
+Counts: learner PT production 0.33 → 2.00 turns/session; correction styles
+prompt 5→7, reveal 9→6. The production step (Rule 3 Step 4) lengthens tutor
+turns slightly, which explains the brevity dip — accepted trade.
+
+## Next iterations (planned)
+
+1. Brevity guard: cap the production-step phrasing to one short line
+   (`conversational_brevity`, currently 4.33).
+2. Recall-direction warm-up for known words (needs a confidence flag on
+   vocab entries in `progress.py`).
+3. Structured-input minimal pairs at A1+ (clitic placement first).
+
+## baseline-venice — 2026-08-22 16:53
+- Sessions: 3 × 8 learner turns
+- Models: tutor `deepseek-v3.2` / aux `deepseek-v3.2`
+- **Overall: 4.25**
+- european_portuguese: 5.0
+- level_appropriate_input: 5.0
+- method_fidelity: 3.67
+- no_answer_reveal: 1.67
+- learner_output: 5.0
+- corrective_feedback_quality: 5.0
+- conversational_brevity: 5.0
+- task_framing: 3.67
+
+## iter1-two-track-venice — 2026-08-22 17:47
+- Sessions: 3 × 8 learner turns
+- Models: tutor `deepseek-v3.2` / aux `deepseek-v3.2`
+- **Overall: 4.62**
+- european_portuguese: 5.0
+- level_appropriate_input: 5.0
+- method_fidelity: 4.33
+- no_answer_reveal: 4.0
+- learner_output: 5.0
+- corrective_feedback_quality: 5.0
+- conversational_brevity: 4.33
+- task_framing: 4.33

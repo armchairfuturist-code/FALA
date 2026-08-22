@@ -224,7 +224,7 @@ def judge_session(transcript: list[dict]) -> dict:
         },
         {"role": "user", "content": _transcript_text(transcript)},
     ]
-    data = llm_call_json(judge_messages, max_tokens=2500, model=JUDGE_MODEL)
+    data = llm_call_json(judge_messages, max_tokens=6000, model=JUDGE_MODEL)
     return data["scores"]
 
 
@@ -245,7 +245,7 @@ def judge_counts(transcript: list[dict]) -> dict:
                 },
                 {"role": "user", "content": _transcript_text(transcript)},
             ],
-            max_tokens=1500,
+            max_tokens=3000,
             model=JUDGE_MODEL,
         )
         styles = counts.get("correction_styles", {})
@@ -315,11 +315,19 @@ def main():
         print(f"[run_eval] session {i + 1}/{args.sessions} …", flush=True)
         result = run_session(i, args.turns)
         result["deterministic"] = deterministic_checks(result["transcript"])
+        # Persist the transcript before judging so a judge crash loses nothing.
+        (out_dir / f"session_{i}.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2)
+        )
         if not args.no_judge:
-            result["judge_scores"] = judge_session(result["transcript"])
-            result["judge_counts"] = judge_counts(result["transcript"])
-            all_counts.append(result["judge_counts"])
-            all_scores.append(result["judge_scores"])
+            try:
+                result["judge_scores"] = judge_session(result["transcript"])
+                result["judge_counts"] = judge_counts(result["transcript"])
+            except Exception as e:
+                print(f"[run_eval] judging failed for session {i}: {e}", flush=True)
+            else:
+                all_counts.append(result["judge_counts"])
+                all_scores.append(result["judge_scores"])
         all_checks.append(result["deterministic"])
         transcripts.append(result)
         (out_dir / f"session_{i}.json").write_text(
