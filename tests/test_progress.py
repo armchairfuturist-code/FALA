@@ -199,6 +199,66 @@ class TestGetReviewWords:
 
 
 # ---------------------------------------------------------------------------
+# Vocabulary: get_review_words_with_direction
+# ---------------------------------------------------------------------------
+
+
+class TestGetReviewWordsWithDirection:
+    def _make_entry(self, word, confidence=0.5, interval=1):
+        last_reviewed = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        return {
+            "word": word,
+            "english": "",
+            "context": "",
+            "ease": 2.5,
+            "interval": interval,
+            "last_reviewed": last_reviewed,
+            "confidence": confidence,
+            "needs_review": False,
+        }
+
+    def test_high_confidence_gets_recall(self):
+        p = _reload_progress()
+        entries = [self._make_entry("forte", confidence=0.8)]
+        tagged = p.get_review_words_with_direction(entries)
+        assert len(tagged) == 1
+        assert tagged[0]["retrieval_direction"] == "recall"
+
+    def test_low_confidence_gets_recognition(self):
+        p = _reload_progress()
+        entries = [self._make_entry("fraco", confidence=0.3)]
+        tagged = p.get_review_words_with_direction(entries)
+        assert len(tagged) == 1
+        assert tagged[0]["retrieval_direction"] == "recognition"
+
+    def test_boundary_at_half_gets_recall(self):
+        p = _reload_progress()
+        entries = [self._make_entry("meio", confidence=0.5)]
+        tagged = p.get_review_words_with_direction(entries)
+        assert tagged[0]["retrieval_direction"] == "recall"
+
+    def test_mixed_entries_tagged_individually(self):
+        p = _reload_progress()
+        entries = [
+            self._make_entry("known", confidence=0.9),
+            self._make_entry("newish", confidence=0.2),
+        ]
+        tagged = p.get_review_words_with_direction(entries, count=5)
+        directions = {e["word"]: e["retrieval_direction"] for e in tagged}
+        assert directions == {"known": "recall", "newish": "recognition"}
+
+    def test_originals_not_mutated(self):
+        p = _reload_progress()
+        entries = [self._make_entry("word", confidence=0.8)]
+        p.get_review_words_with_direction(entries)
+        assert "retrieval_direction" not in entries[0]
+
+    def test_empty_list_returns_empty(self):
+        p = _reload_progress()
+        assert p.get_review_words_with_direction([]) == []
+
+
+# ---------------------------------------------------------------------------
 # Vocabulary: save / load round-trip
 # ---------------------------------------------------------------------------
 

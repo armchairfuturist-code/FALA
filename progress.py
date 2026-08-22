@@ -248,6 +248,28 @@ def get_review_words(entries: list[VocabEntry], count: int | None = None) -> lis
     return due[:count]
 
 
+def get_review_words_with_direction(
+    entries: list[VocabEntry], count: int | None = None
+) -> list[VocabEntry]:
+    """Return words due for review tagged with a retrieval direction.
+
+    Testing effect: successful recall (EN -> PT production) beats recognition
+    (PT -> EN). Words the learner already knows well (confidence >= 0.5) get
+    direction "recall"; weak or new words stay on "recognition".
+
+    Returns copies of the due entries (see get_review_words) with an extra
+    "retrieval_direction" key. Originals are not mutated.
+    """
+    tagged = []
+    for e in get_review_words(entries, count):
+        item = dict(e)
+        item["retrieval_direction"] = (
+            "recall" if e.get("confidence", 0.0) >= 0.5 else "recognition"
+        )
+        tagged.append(item)
+    return tagged
+
+
 def update_vocab_after_review(
     entries: list[VocabEntry], word: str, correct: bool
 ) -> list[VocabEntry]:
@@ -309,11 +331,15 @@ def save_learning_record(title: str, content: str, paths: UserPaths | None = Non
 
 
 def get_vocab_for_prompt(entries: list[VocabEntry], count: int = 15) -> str:
-    review = get_review_words(entries, count)
+    review = get_review_words_with_direction(entries, count)
     if not review:
         return "(no vocabulary yet — this is the first session)"
     lines = []
     for e in review:
         conf = e.get("confidence", 0.5)
-        lines.append(f"- {e['word']} ({e.get('english', '?')}) — confidence: {conf:.0%}")
+        direction = e.get("retrieval_direction", "recognition")
+        lines.append(
+            f"- {e['word']} ({e.get('english', '?')}) — confidence: {conf:.0%} "
+            f"[review direction: {direction}]"
+        )
     return "\n".join(lines)

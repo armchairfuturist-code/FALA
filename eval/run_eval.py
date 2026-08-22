@@ -40,12 +40,22 @@ import config  # noqa: E402
 from conversation import ConversationEngine  # noqa: E402
 
 LLM_MODEL = os.environ["FALA_MODEL"]
-client = OpenAI(base_url=config.LLM_BASE_URL, api_key=config.LLM_API_KEY)
-
-# Learner + judge can run on a different model so eval traffic does not share
-# the tutor model's provider quota pool.
+# Learner + judge can run on a different PROVIDER than the tutor (separate
+# base URL and key) so eval traffic does not share the tutor's quota pool.
 AUX_MODEL = os.environ.get("FALA_EVAL_AUX_MODEL", LLM_MODEL)
+AUX_BASE_URL = os.environ.get("FALA_EVAL_AUX_BASE_URL", config.LLM_BASE_URL)
+AUX_API_KEY = os.environ.get("FALA_EVAL_AUX_API_KEY", config.LLM_API_KEY)
 JUDGE_MODEL = os.environ.get("FALA_EVAL_JUDGE_MODEL", AUX_MODEL)
+JUDGE_USES_AUX_CLIENT = os.environ.get("FALA_EVAL_JUDGE_BASE_URL", AUX_BASE_URL) == AUX_BASE_URL
+aux_client = OpenAI(base_url=AUX_BASE_URL, api_key=AUX_API_KEY)
+judge_client = (
+    aux_client
+    if JUDGE_USES_AUX_CLIENT
+    else OpenAI(
+        base_url=os.environ["FALA_EVAL_JUDGE_BASE_URL"],
+        api_key=os.environ.get("FALA_EVAL_JUDGE_API_KEY", AUX_API_KEY),
+    )
+)
 
 # Cap per-message length in judge inputs so one request stays under small
 # provider token-per-minute limits.
@@ -66,8 +76,8 @@ def strip_think(text: str) -> str:
     return THINK_RE.sub("", text).strip()
 
 
-def llm_call(messages, max_tokens=1000, temperature=0.7, model: str | None = None):
-    resp = client.chat.completions.create(
+def llm_call(messages, max_tokens=1000, temperature=0.7, model: str | None = None, client=None):
+    resp = (client or aux_client).chat.completions.create(
         model=model or AUX_MODEL,
         messages=messages,
         max_tokens=max_tokens,
@@ -134,12 +144,16 @@ def parse_json(text: str) -> dict:
     return json.loads(text)
 
 
-def llm_call_json(messages, max_tokens=2500, retries: int = 2, model: str | None = None) -> dict:
+def llm_call_json(
+    messages, max_tokens=2500, retries: int = 2, model: str | None = None, client=None
+) -> dict:
     """llm_call + JSON parsing, retrying once per failure with a repair prompt."""
     msgs = list(messages)
     last_err: Exception | None = None
     for attempt in range(retries + 1):
-        text = with_backoff(llm_call, msgs, max_tokens=max_tokens, temperature=0, model=model)
+        text = with_backoff(
+            llm_call, msgs, max_tokens=max_tokens, temperature=0, model=model, client=client
+        )
         try:
             return parse_json(text)
         except json.JSONDecodeError as err:
@@ -224,7 +238,7 @@ def judge_session(transcript: list[dict]) -> dict:
         },
         {"role": "user", "content": _transcript_text(transcript)},
     ]
-    data = llm_call_json(judge_messages, max_tokens=6000, model=JUDGE_MODEL)
+    data = llm_call_json(judge_messages, max_tokens=6000, model=JUDGE_MODEL, client=judge_client)
     return data["scores"]
 
 
@@ -247,6 +261,7 @@ def judge_counts(transcript: list[dict]) -> dict:
             ],
             max_tokens=3000,
             model=JUDGE_MODEL,
+            client=judge_client,
         )
         styles = counts.get("correction_styles", {})
         if isinstance(styles, list):

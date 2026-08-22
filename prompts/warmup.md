@@ -24,6 +24,8 @@ Start with a common everyday scenario. Today's scenario is **café/restaurant** 
 
 ### Returning session (has vocabulary to review)
 1. **Retrieval practice**: Say 1-2 past sentences in Portuguese. Ask for the English.
+   - Word tagged **recall**: give the ENGLISH word and ask "How do you say X in Portuguese?" — the learner must produce the Portuguese.
+   - Word tagged **recognition**: keep the current pattern — say the Portuguese, ask for the English.
 2. If remembered: "Boa! Let's continue with a new scenario."
 3. If forgotten: re-teach the sentence gently, then introduce the new scenario.
 

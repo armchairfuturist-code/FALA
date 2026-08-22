@@ -105,3 +105,68 @@ turns slightly, which explains the brevity dip — accepted trade.
 - corrective_feedback_quality: 5.0
 - conversational_brevity: 4.33
 - task_framing: 4.33
+
+## smoke-syn — 2026-08-22 18:05
+- Sessions: 1 × 1 learner turns
+- Models: tutor `deepseek-v3.2` / aux `hf:Qwen/Qwen3.8-27B`
+- **Overall: 4.75**
+- european_portuguese: 5.0
+- level_appropriate_input: 4.0
+- method_fidelity: 5.0
+- no_answer_reveal: 5.0
+- learner_output: 5.0
+- corrective_feedback_quality: 5.0
+- conversational_brevity: 4.0
+- task_framing: 5.0
+
+## iter2-brevity — 2026-08-22 18:35
+- Sessions: 3 × 8 learner turns
+- Models: tutor `deepseek-v3.2` / aux `hf:Qwen/Qwen3.8-27B`
+- **Overall: 3.62**
+- european_portuguese: 5.0
+- level_appropriate_input: 4.0
+- method_fidelity: 3.0
+- no_answer_reveal: 3.0
+- learner_output: 4.0
+- corrective_feedback_quality: 4.0
+- conversational_brevity: 3.0
+- task_framing: 3.0
+
+## Consistent-judge re-score (2026-08-22, judge `deepseek-v3.2` on all arms)
+
+The Synthetic `hf:Qwen/Qwen3.8-27B` judge produced malformed JSON on most
+calls (truncated reasoning) — its numbers above are unreliable. All saved
+transcripts were re-scored with the same Venice judge via `eval/rejudge.py`.
+This is the comparison set of record (n=3 per arm, same tutor/learner/judge):
+
+| Criterion | baseline | iter1 two-track | iter2 +brevity guard |
+|---|---|---|---|
+| method_fidelity | 3.67 | **4.67** | 3.67 |
+| no_answer_reveal | 3.00 | **3.33** | 2.33 |
+| corrective_feedback_quality | 5.00 | 4.67 | 5.00 |
+| conversational_brevity | 5.00 | 5.00 | 4.33 |
+| task_framing | 3.00 | **3.67** | 3.00 |
+| **Overall** | 4.33 | **4.54** | 4.17 |
+
+Counts: learner PT production 1.0 → 2.0 → 0.67 turns/session; reveals 9 → 10 → 3.
+
+### Decisions
+- **iter1 (two-track + production step + task framing): KEEP.** Beats baseline
+  on the criteria it targets; the feared brevity cost did not appear.
+- **iter2 (brevity guard): REVERT.** Overall dropped to 4.17 and brevity
+  itself scored lower (4.33). No benefit, real cost. Guard line removed from
+  `prompts/system.md`.
+
+### Known noise
+n=3 per arm; judge variance between runs is visible (baseline scored 4.25
+then 4.33 on identical transcripts). Treat deltas < 0.3 as directional only.
+Confirm runs with more sessions before big calls.
+
+## Iteration 3 (implemented, NOT yet evaluated)
+- `progress.py`: `get_review_words_with_direction()` — recall (EN→PT) at
+  confidence ≥ 0.5, recognition (PT→EN) below. Wired into
+  `get_vocab_for_prompt`, so the warm-up prompt now tags each review word.
+- `prompts/warmup.md`: recall/recognition instructions for the tutor.
+- NOT measured by the current harness: simulated A0 first sessions have no
+  vocabulary, so the review path never triggers. Measuring iter3 needs
+  multi-session simulation (harness extension) — next harness task.
