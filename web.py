@@ -333,19 +333,21 @@ async function toggleVoice() {
  if (data.transcript) {
  document.getElementById('input').value = data.transcript;
  setStatus('heard: ' + data.transcript);
- sendMessage();
+ sendMessage(true);
  } else {
  setStatus(data.error || 'Voice input failed \u2014 type instead');
  }
  }
 
  async function playTTS(text) {
+ // Strip markdown so the voice reads words, not symbols.
+ const spoken = text.replace(/[*_#`>|]/g, '').replace(/\\[(.*?)\\]\\(.*?\\)/g, '$1');
  setStatus('speaking...');
  try {
  const r = await fetch('/tts', {
  method: 'POST',
  headers: {'Content-Type': 'application/x-www-form-urlencoded'},
- body: 'text=' + encodeURIComponent(text),
+ body: 'text=' + encodeURIComponent(spoken),
  });
  const ct = r.headers.get('content-type') || '';
  if (ct.includes('audio')) {
@@ -358,7 +360,7 @@ async function toggleVoice() {
  } catch (e) { setStatus(''); }
  }
 
- async function sendMessage() {
+ async function sendMessage(fromVoice) {
   const input = document.getElementById('input');
   const text = input.value.trim();
   if (!text || !started) return;
@@ -369,7 +371,7 @@ async function toggleVoice() {
   const data = await api('/message', {
     method: 'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: 'text=' + encodeURIComponent(text),
+    body: 'text=' + encodeURIComponent(text) + '&is_voice=' + (fromVoice ? 'true' : 'false'),
   });
   document.getElementById('send').classList.remove('loading');
   if (!data) return;
@@ -487,7 +489,12 @@ def history(request: Request, response: Response):
 
 
 @app.post("/message")
-def message(request: Request, response: Response, text: str = Form(...)):
+def message(
+    request: Request,
+    response: Response,
+    text: str = Form(...),
+    is_voice: bool = Form(False),
+):
     state = get_session(request, response)
     if state is None:
         raise HTTPException(status_code=401, detail="Not authenticated.")
@@ -502,7 +509,7 @@ def message(request: Request, response: Response, text: str = Form(...)):
             state.session_ended = True
             state.engine = None
             return {"response": result}
-        resp = eng.user_message(text)
+        resp = eng.user_message(text, is_voice=is_voice)
         return {"response": resp}
     except Exception as e:
         logger.exception("message failed")

@@ -55,16 +55,28 @@ def _ensure_piper_voice() -> bool:
         return False
 
 
+_piper_voice = None
+
+
+def _get_piper_voice():
+    """Load the Piper voice once and cache it (loading is slow, ~1-2s)."""
+    global _piper_voice
+    if _piper_voice is None:
+        from piper import PiperVoice
+
+        _piper_voice = PiperVoice.load(str(PIPER_MODEL_PATH), str(PIPER_CONFIG_PATH))
+    return _piper_voice
+
+
 def _piper_text_to_speech(text: str) -> Path | None:
     """Synthesize speech using Piper TTS with the pt-PT tugão voice."""
     if not _ensure_piper_voice():
         return None
 
     try:
-        from piper import PiperVoice
         from piper.config import SynthesisConfig
 
-        voice = PiperVoice.load(str(PIPER_MODEL_PATH), str(PIPER_CONFIG_PATH))
+        voice = _get_piper_voice()
 
         # Slower speech for beginners (length_scale 1.0 = normal, >1 = slower)
         syn_config = SynthesisConfig(length_scale=1.5)
