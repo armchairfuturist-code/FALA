@@ -10,11 +10,21 @@ from conversation import ConversationEngine
 console = Console()
 
 try:
-    from audio import get_tts_provider_info, listen, speak
+    from audio import extract_speech_text, get_tts_provider_info, listen, speak
 
     AUDIO_AVAILABLE = True
 except ImportError:
     AUDIO_AVAILABLE = False
+
+    # ponytail: fallback duplicate of audio.extract_speech_text so the CLI can
+    # still strip the ---SAY--- marker when the openai/audio deps are missing;
+    # keep in sync with audio.py (upgrade path: extract to a dep-free module).
+    def extract_speech_text(response: str) -> tuple[str, str | None]:  # type: ignore[misc]
+        marker = "---SAY---"
+        if marker in response:
+            display, _, speech = response.partition(marker)
+            return display.strip(), speech.strip()
+        return response, None
 
 
 def main():
@@ -101,10 +111,14 @@ def main():
 
 
 def print_tutor(text: str, speak_audio: bool = False):
+    # ---SAY--- contract: the panel shows the display text only, and speech
+    # synthesizes just the speech part (speak() re-applies the same contract
+    # defensively, so both paths stay correct if either is changed alone).
+    display, speech = extract_speech_text(text)
     console.print()
-    console.print(Panel(text, title="[bold blue]tutor[/bold blue]", border_style="blue"))
+    console.print(Panel(display, title="[bold blue]tutor[/bold blue]", border_style="blue"))
     if speak_audio and AUDIO_AVAILABLE:
-        ok = speak(text)
+        ok = speak(speech if speech is not None else display)
         if not ok:
             console.print(
                 "[dim](audio playback failed — is mpv, ffplay, or aplay installed?)[/dim]"

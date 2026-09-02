@@ -93,7 +93,9 @@ LLM_API_KEY = os.getenv("FALA_API_KEY") or os.getenv("OPENAI_API_KEY", "")
 TTS_PROVIDER = os.getenv("FALA_TTS", "openai")
 TTS_VOICE = os.getenv("FALA_TTS_VOICE", "alloy")
 
-STT_MODEL = os.getenv("FALA_STT_MODEL", "base")
+# "small" is the recommended pt-PT default for the faster-whisper backend
+# (see docs/research/stt-2026.md).
+STT_MODEL = os.getenv("FALA_STT_MODEL", "small")
 
 # Cloud STT model used by the API fallback path in audio.py. Defaults to the
 # OpenAI model, but auto-switches to Groq's Whisper when FALA_BASE_URL points
@@ -107,10 +109,14 @@ AZURE_SPEECH_KEY = os.getenv("FALA_AZURE_KEY") or os.getenv("AZURE_SPEECH_KEY", 
 AZURE_SPEECH_REGION = os.getenv("FALA_AZURE_REGION", "westeurope")
 AZURE_TTS_VOICE = os.getenv("FALA_AZURE_VOICE", "pt-PT-FernandaNeural")
 
+# Max messages sent to the LLM per turn (system prompt + warm-up marker +
+# most recent messages). Keeps context and per-turn cost from growing
+# quadratically over a long session (audit 2026 #18).
+CONTEXT_MESSAGES = int(os.getenv("FALA_CONTEXT_MESSAGES", "30"))
+
+# Session tuning limits.
 GUARDRAILS = {
     "max_new_words_per_session": 5,
     "min_review_words_per_warmup": 3,
     "present_tense_confidence_threshold": 0.7,
 }
-
-LEVEL_ORDER = ["A1", "A2", "B1"]

@@ -39,6 +39,11 @@ gcloud run deploy fala \
 > `--allow-unauthenticated` lets Cloud Run's HTTPS proxy reach the app.
 > Auth is handled by FALA's invite-code gate, not Cloud IAM.
 
+> **Set `--max-instances=1` until a shared store exists.** Session tokens,
+> rate-limit windows, lockout counters, and live engines are all in-memory
+> per container — multiple instances mean a request can land on a container
+> that never saw the login, breaking auth and rate limiting.
+
 ## Persistent storage (important for real users)
 
 Cloud Run's container filesystem is **ephemeral** — without a volume, every
