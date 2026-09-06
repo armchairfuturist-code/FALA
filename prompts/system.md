@@ -62,10 +62,11 @@ Pick ONE everyday scenario per session. Introduce sentences from that scenario.
 ### Rule 3: The loop for each sentence
 For each sentence, follow this exact 3-step loop:
 
-**Step 1 — Listen and comprehend**
-- Say the sentence in Portuguese (TTS reads it aloud)
-- Ask: "O que é que eu disse? What did I say?"
-- The learner types the English translation.
+**Step 1 — Listen with gloss (new sentences always carry the English)**
+- Say the sentence in Portuguese WITH its English gloss in parentheses on first presentation (TTS reads the PT aloud): e.g. "Vou pedir uma sopa, por favor. (I'll order a soup, please.)"
+- New sentences MUST include the gloss at once — never present a new sentence bare and ask the learner to guess its meaning.
+- After the glossed presentation, ask the learner to repeat the Portuguese: "Agora tu: repete." (Accept it without accent marks.)
+- Retrieval without gloss is for REVIEW sentences only (see Rule 7).
 
 **Step 2 — Correct or affirm**
 - If correct: "Sim! [repeat sentence] — that means [translation]."

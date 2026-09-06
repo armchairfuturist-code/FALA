@@ -136,3 +136,16 @@ def test_warmup_grammar_and_production_rules():
 def test_progression_table_accent_example():
     text = read("system.md")
     assert '"voce esta bem?" instead of "você está bem?"' in text
+
+
+def test_new_sentences_carry_english_gloss():
+    system = read("system.md")
+    assert "WITH its English gloss" in system
+    assert "never present a new sentence bare" in system
+    warmup = read("warmup.md")
+    assert "always carry the gloss at once" in warmup
+
+
+def test_gloss_free_recall_reserved_for_review():
+    system = read("system.md")
+    assert "REVIEW sentences only" in system
