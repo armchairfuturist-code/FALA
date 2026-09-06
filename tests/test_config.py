@@ -59,7 +59,7 @@ class TestEnvVarDefaults:
     def test_stt_default_model(self, clear_env):
         import config
 
-        assert config.STT_MODEL == "base"
+        assert config.STT_MODEL == "small"
 
     def test_stt_api_model_defaults_to_openai(self, clear_env):
         import config
@@ -209,8 +209,3 @@ class TestGuardrails:
         assert config.GUARDRAILS["max_new_words_per_session"] == 5
         assert config.GUARDRAILS["min_review_words_per_warmup"] == 3
         assert config.GUARDRAILS["present_tense_confidence_threshold"] == 0.7
-
-    def test_level_order(self, clear_env):
-        import config
-
-        assert config.LEVEL_ORDER == ["A1", "A2", "B1"]

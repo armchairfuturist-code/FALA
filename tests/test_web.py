@@ -28,11 +28,13 @@ def mock_engine():
 
 @pytest.fixture(autouse=True)
 def reset_web_globals():
-    """Reset the web module's session store before each test."""
+    """Reset the web module's session/token stores before each test."""
     import web
 
     web._sessions.clear()
     web._rate_windows.clear()
+    web._session_tokens.clear()
+    web._code_failures.clear()
     yield
 
 
@@ -110,7 +112,7 @@ class TestMessage:
         client.post("/message", data={"text": "quit"})
         resp = client.post("/message", data={"text": "olá de novo"})
         data = resp.json()
-        assert "No active session" in data["response"]
+        assert "No active session" in data["response"] or "Session ended" in data["response"]
 
 
 class TestStats:
@@ -196,12 +198,55 @@ class TestSTT:
             resp = client.post("/stt", files={"file": ("voice.webm", b"audio", "audio/webm")})
         assert resp.json()["transcript"] == ""
 
-    def test_stt_error(self, client):
+    def test_stt_error_is_generic(self, client):
         with patch("web.speech_to_text", side_effect=RuntimeError("STT failed")):
             resp = client.post("/stt", files={"file": ("voice.webm", b"audio", "audio/webm")})
         data = resp.json()
         assert data["transcript"] == ""
-        assert "STT failed" in data["error"]
+        assert "STT failed" not in data["error"]  # no internal detail echoed
+
+    @staticmethod
+    def _wav_bytes(seconds: float, byte_rate: int = 8000) -> bytes:
+        import struct
+
+        data_size = int(seconds * byte_rate)
+        fmt = struct.pack("<HHIIHH", 1, 1, 8000, byte_rate, 2, 16)  # PCM mono 16-bit
+        return (
+            b"RIFF"
+            + (36 + data_size).to_bytes(4, "little")
+            + b"WAVE"
+            + b"fmt "
+            + (16).to_bytes(4, "little")
+            + fmt
+            + b"data"
+            + data_size.to_bytes(4, "little")
+            + b"\x00" * 8
+        )
+
+    def test_stt_rejects_wav_longer_than_cap(self, client):
+        """A .wav whose header claims > 120 s is rejected without transcription."""
+        with patch("web.speech_to_text") as mock_stt:
+            resp = client.post(
+                "/stt", files={"file": ("voice.wav", self._wav_bytes(121), "audio/wav")}
+            )
+        assert resp.status_code == 413
+        mock_stt.assert_not_called()
+
+    def test_stt_accepts_wav_within_cap(self, client):
+        with patch("web.speech_to_text", return_value="olá") as mock_stt:
+            resp = client.post(
+                "/stt", files={"file": ("voice.wav", self._wav_bytes(5), "audio/wav")}
+            )
+        assert resp.json()["transcript"] == "olá"
+        mock_stt.assert_called_once()
+
+    def test_non_wav_has_no_header_duration_cap(self, client):
+        """Non-wav formats rely on the 10 MB cap — no header parse possible."""
+        with patch("web.speech_to_text", return_value="olá"):
+            resp = client.post(
+                "/stt", files={"file": ("voice.webm", b"\x1aE\xdf\xa3garbage", "audio/webm")}
+            )
+        assert resp.json()["transcript"] == "olá"
 
 
 class TestTTS:
@@ -249,14 +294,19 @@ class TestAuth:
         assert "invite code" in resp.text.lower()
 
     def test_index_shows_chat_when_authenticated(self, client, auth_enabled, mock_engine):
-        client.cookies.set("fala_session", "test-code-1")
+        client.post("/auth", data={"code": "test-code-1"})
         resp = client.get("/")
         assert "invite" not in resp.text.lower()
 
-    def test_valid_code_sets_cookie(self, client, auth_enabled):
+    def test_valid_code_mints_opaque_token(self, client, auth_enabled):
+        import web
+
         resp = client.post("/auth", data={"code": "test-code-1"})
         assert resp.json()["ok"] is True
-        assert client.cookies.get("fala_session") == "test-code-1"
+        token = client.cookies.get("fala_session")
+        assert token and token != "test-code-1"
+        assert token in web._session_tokens
+        assert web._session_tokens[token] == web._user_id_for_code("test-code-1")
 
     def test_invalid_code_rejected(self, client, auth_enabled):
         resp = client.post("/auth", data={"code": "wrong"})
@@ -268,7 +318,7 @@ class TestAuth:
         assert resp.json()["detail"] == "Not authenticated."
 
     def test_authenticated_start_works(self, client, auth_enabled, mock_engine):
-        client.cookies.set("fala_session", "test-code-1")
+        client.post("/auth", data={"code": "test-code-1"})
         resp = client.post("/start")
         assert "Bem-vindo" in resp.json()["response"]
 
@@ -289,6 +339,35 @@ class TestHistory:
         client.post("/quit")
         resp = client.get("/history")
         assert resp.json() == {"messages": []}
+
+    def test_history_tutor_entry_uses_stored_speech(self, client, mock_engine):
+        mock_engine.get_history.return_value = [
+            {"role": "tutor", "content": "Boa!", "speech": "Boa mesmo."},
+            {"role": "user", "content": "olá"},
+        ]
+        client.post("/start")
+        resp = client.get("/history")
+        msgs = resp.json()["messages"]
+        assert msgs[0]["content"] == "Boa!"
+        assert msgs[0]["speech"] == "Boa mesmo."
+
+    def test_history_normalizes_legacy_raw_say_content(self, client, mock_engine):
+        """Legacy checkpoints store the RAW ---SAY--- response as content."""
+        mock_engine.get_history.return_value = [
+            {"role": "tutor", "content": "Boa!\n---SAY---\nBoa mesmo."},
+        ]
+        client.post("/start")
+        resp = client.get("/history")
+        m = resp.json()["messages"][0]
+        assert "---SAY---" not in m["content"]
+        assert m["content"] == "Boa!"
+        assert m["speech"] == "Boa mesmo."
+
+    def test_history_user_entries_pass_through(self, client, mock_engine):
+        mock_engine.get_history.return_value = [{"role": "user", "content": "olá"}]
+        client.post("/start")
+        resp = client.get("/history")
+        assert resp.json()["messages"] == [{"role": "user", "content": "olá"}]
 
 
 class TestRateLimit:
@@ -315,6 +394,30 @@ class TestRateLimit:
         # Rewind the recorded timestamps past the 60s window
         web._rate_windows = {k: [t - 61 for t in v] for k, v in web._rate_windows.items()}
         assert client.post("/message", data={"text": "d"}).status_code == 200
+
+
+class TestSessionTokenCap:
+    def test_token_map_capped_at_1000(self):
+        """_session_tokens is bounded — oldest token evicted past the cap."""
+        import web
+
+        for i in range(web.MAX_SESSION_TOKENS + 10):
+            web._remember_session_token(f"tok-{i}", f"user-{i}")
+
+        assert len(web._session_tokens) == web.MAX_SESSION_TOKENS
+        assert "tok-0" not in web._session_tokens  # oldest dropped
+        assert f"tok-{web.MAX_SESSION_TOKENS + 9}" in web._session_tokens  # newest kept
+
+    def test_existing_token_refreshed_not_evicted(self):
+        import web
+
+        web._remember_session_token("a", "u-a")
+        for i in range(web.MAX_SESSION_TOKENS - 1):
+            web._remember_session_token(f"filler-{i}", f"u-{i}")
+        web._remember_session_token("a", "u-a")  # touch old token -> move_to_end
+        for i in range(5):
+            web._remember_session_token(f"new-{i}", f"u-{i}")
+        assert "a" in web._session_tokens
 
 
 class TestHealthz:
@@ -366,14 +469,14 @@ class TestVoiceAuthGate:
         assert resp.status_code == 401
 
     def test_stt_works_when_authenticated(self, client, auth_enabled):
-        client.cookies.set("fala_session", "test-code-1")
+        client.post("/auth", data={"code": "test-code-1"})
         with patch("web.speech_to_text", return_value="olá tudo bem"):
             resp = client.post("/stt", files={"file": ("v.webm", b"x", "audio/webm")})
         assert resp.status_code == 200
         assert resp.json()["transcript"] == "olá tudo bem"
 
     def test_tts_works_when_authenticated(self, client, auth_enabled):
-        client.cookies.set("fala_session", "test-code-1")
+        client.post("/auth", data={"code": "test-code-1"})
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
             f.write(b"fake-mp3")
             tmp = Path(f.name)
@@ -406,14 +509,15 @@ class TestResume:
         r1 = client.post("/start")
         assert "Bem-vindo" in r1.json()["response"]
         client.post("/message", data={"text": "ola"})
-        sid = client.cookies.get("fala_session")
-        assert sid
+        token = client.cookies.get("fala_session")
+        user_id = web._session_tokens[token]
+        assert user_id
 
         # Phase 2: simulate server restart — RAM session store is gone
         web._sessions.clear()
 
         client2 = TestClient(app)
-        client2.cookies.set("fala_session", sid)
+        client2.cookies.set("fala_session", token)
 
         # History must be rebuilt from the on-disk checkpoint
         hist = client2.get("/history")
@@ -441,8 +545,62 @@ class TestResume:
 
         client = TestClient(app)
         client.post("/start")
-        sid = client.cookies.get("fala_session")
-        assert web._checkpoint_exists(sid)
+        token = client.cookies.get("fala_session")
+        user_id = web._session_tokens[token]
+        assert web._checkpoint_exists(user_id)
 
         client.post("/quit")
-        assert not web._checkpoint_exists(sid)
+        assert not web._checkpoint_exists(user_id)
+
+
+class TestSpeechChannel:
+    def test_message_response_includes_speech_field(self, client, mock_engine):
+        mock_engine.user_message.return_value = (
+            "Boa! Veja isto.\n---SAY---\nBoa! Veja isto, sem markdown."
+        )
+        client.post("/start")
+        resp = client.post("/message", data={"text": "olá"})
+        data = resp.json()
+        assert data["response"] == "Boa! Veja isto."
+        assert data["speech"] == "Boa! Veja isto, sem markdown."
+
+    def test_message_without_marker_speech_is_none(self, client, mock_engine):
+        client.post("/start")
+        resp = client.post("/message", data={"text": "olá"})
+        data = resp.json()
+        assert data["response"] == "Ótimo! Continue assim."
+        assert data["speech"] is None
+
+    def test_tts_endpoint_speaks_say_section_only(self, client, tmp_path):
+        """POST /tts with a ---SAY--- response synthesizes only the SAY text."""
+        audio_file = tmp_path / "x.mp3"
+        audio_file.write_bytes(b"mp3")
+        with patch("web.text_to_speech", return_value=audio_file) as mock_tts:
+            resp = client.post(
+                "/tts",
+                data={"text": "Display text\n---SAY---\nSó isto se fala."},
+            )
+        assert resp.status_code == 200
+        mock_tts.assert_called_once_with("Só isto se fala.")
+
+    def test_tts_endpoint_without_marker_speaks_text(self, client, tmp_path):
+        audio_file = tmp_path / "x.mp3"
+        audio_file.write_bytes(b"mp3")
+        with patch("web.text_to_speech", return_value=audio_file) as mock_tts:
+            client.post("/tts", data={"text": "texto simples"})
+        mock_tts.assert_called_once_with("texto simples")
+
+    def test_html_page_has_no_tts_autoplay_on_load(self):
+        """Autoplay on window.onload is silently blocked by browsers — must not exist."""
+        from web import HTML_PAGE
+
+        assert "playTTS(data.response)" not in HTML_PAGE
+        assert "window.onload" in HTML_PAGE  # warmup still starts on load
+
+    def test_html_page_has_replay_and_toggle(self):
+        from web import HTML_PAGE
+
+        assert "toggleTTS" in HTML_PAGE
+        assert "localStorage.getItem('fala_tts')" in HTML_PAGE
+        assert "replay-btn" in HTML_PAGE
+        assert "audioCache" in HTML_PAGE

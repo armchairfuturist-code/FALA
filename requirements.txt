@@ -5,3 +5,4 @@ fastapi>=0.100.0
 uvicorn>=0.20.0
 python-multipart>=0.0.5
 # piper-tts # optional: for local TTS with FALA_TTS=piper
+faster-whisper>=1.0.0

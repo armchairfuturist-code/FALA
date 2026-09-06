@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from config import DATA_DIR, GUARDRAILS, UserPaths, paths_for_user
@@ -16,6 +19,20 @@ DEFAULT_PATHS = paths_for_user()
 
 def _resolve(paths: UserPaths | None) -> UserPaths:
     return paths if paths is not None else DEFAULT_PATHS
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write text to path atomically: tmp file in the same dir + os.replace.
+
+    A crash mid-write can never leave a torn file at path — readers see
+    either the old content or the new content, never a partial write.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +139,7 @@ def load_summary(paths: UserPaths | None = None) -> str:
 
 
 def save_summary(text: str, paths: UserPaths | None = None):
-    _resolve(paths).summary.write_text(text)
+    atomic_write_text(_resolve(paths).summary, text)
 
 
 def _default_summary() -> str:
@@ -155,20 +172,34 @@ def load_vocabulary(paths: UserPaths | None = None) -> list[VocabEntry]:
     for block in text.strip().split("\n- word: "):
         if not block.strip():
             continue
-        # The first block (before any "\n- word: " split) already starts
-        # with "- word:" — pass it through directly.
-        # Later blocks start with the word content after the split point
-        # and need the "- word: " prefix re-added.
-        if block.lstrip().startswith("- word:"):
-            entry = _parse_vocab_entry(block)
-        elif block.startswith('"'):
-            entry = _parse_vocab_entry("- word: " + block)
-        else:
-            block = '"' + block
-            entry = _parse_vocab_entry("- word: " + block)
+        # Values are JSON-escaped on write, so they never contain a raw
+        # newline — "- word: " inside a value cannot create a split point.
+        # The first block already starts with "- word:"; later blocks need
+        # the prefix re-added after the split consumed it.
+        if not block.lstrip().startswith("- word:"):
+            block = "- word: " + block
+        entry = _parse_vocab_entry(block)
         if entry:
             entries.append(entry)
     return entries
+
+
+def _unescape_value(value: str) -> str:
+    """Undo the JSON escaping applied by _escape_value.
+
+    Tolerates legacy files: a bare unquoted value fails json.loads and
+    falls back to strip('"'), which is the old (lossy) behavior.
+    """
+    try:
+        out = json.loads(value)
+    except (json.JSONDecodeError, ValueError):
+        return value.strip('"')
+    return out if isinstance(out, str) else value
+
+
+def _escape_value(value: str) -> str:
+    """JSON-encode a value: stays on one line, round-trips quotes/newlines."""
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _parse_vocab_entry(block: str) -> VocabEntry | None:
@@ -176,11 +207,11 @@ def _parse_vocab_entry(block: str) -> VocabEntry | None:
     for line in block.strip().splitlines():
         line = line.strip()
         if line.startswith("- word:"):
-            entry["word"] = line.split(":", 1)[1].strip().strip('"')
+            entry["word"] = _unescape_value(line.split(":", 1)[1].strip())
         elif line.startswith("english:"):
-            entry["english"] = line.split(":", 1)[1].strip().strip('"')
+            entry["english"] = _unescape_value(line.split(":", 1)[1].strip())
         elif line.startswith("context:"):
-            entry["context"] = line.split(":", 1)[1].strip().strip('"')
+            entry["context"] = _unescape_value(line.split(":", 1)[1].strip())
         elif line.startswith("ease:"):
             try:
                 entry["ease"] = float(line.split(":", 1)[1].strip())
@@ -211,23 +242,24 @@ def _parse_vocab_entry(block: str) -> VocabEntry | None:
 
 
 def save_vocabulary(entries: list[VocabEntry], paths: UserPaths | None = None):
-    # Never overwrite vocabulary with empty data — prevents data loss
-    # if extraction fails or vocabulary was loaded from a corrupt file.
-    if not entries:
-        return
+    """Persist entries atomically. Writes exactly what is passed — callers
+    own correctness: an empty list legitimately empties the file (deletions
+    must be persistable); only None is rejected as a caller bug."""
+    if entries is None:
+        raise ValueError("save_vocabulary: entries must be a list, not None")
     p = _resolve(paths)
     lines = []
     for e in entries:
-        lines.append(f'- word: "{e["word"]}"')
-        lines.append(f'  english: "{e.get("english", "")}"')
-        lines.append(f'  context: "{e.get("context", "")}"')
+        lines.append(f"- word: {_escape_value(e['word'])}")
+        lines.append(f"  english: {_escape_value(e.get('english', ''))}")
+        lines.append(f"  context: {_escape_value(e.get('context', ''))}")
         lines.append(f"  ease: {e.get('ease', 2.5)}")
         lines.append(f"  interval: {e.get('interval', 1)}")
         lines.append(f"  last_reviewed: {e.get('last_reviewed', '1970-01-01')}")
         lines.append(f"  confidence: {e.get('confidence', 0.5)}")
         lines.append(f"  needs_review: {'true' if e.get('needs_review', True) else 'false'}")
         lines.append("")
-    p.vocabulary.write_text("\n".join(lines))
+    atomic_write_text(p.vocabulary, "\n".join(lines))
 
 
 def get_review_words(entries: list[VocabEntry], count: int | None = None) -> list[VocabEntry]:
@@ -327,7 +359,8 @@ def save_learning_record(title: str, content: str, paths: UserPaths | None = Non
     num = max(nums) + 1 if nums else 1
     slug = title.lower().replace(" ", "-")[:40]
     path = up.records / f"{num:04d}-{slug}.md"
-    path.write_text(f"# {title}\n\nDate: {datetime.now().strftime('%Y-%m-%d')}\n\n{content}\n")
+    stamp = datetime.now().strftime("%Y-%m-%d")
+    atomic_write_text(path, f"# {title}\n\nDate: {stamp}\n\n{content}\n")
 
 
 def get_vocab_for_prompt(entries: list[VocabEntry], count: int = 15) -> str:

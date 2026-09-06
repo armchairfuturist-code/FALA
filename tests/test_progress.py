@@ -405,23 +405,144 @@ class TestCaseInsensitiveDuplicates:
 
 
 class TestSaveVocabularyEmptyGuard:
-    def test_save_empty_does_not_overwrite(self, tmp_path):
+    """save_vocabulary writes exactly what is passed — callers own correctness."""
+
+    def test_save_empty_empties_file(self, tmp_path):
+        """An empty list legitimately empties the file — deletions persist."""
         import config
 
         old_path = config.VOCABULARY_PATH
         test_path = tmp_path / "vocabulary.md"
-
-        # Write some existing data first
-        test_path.write_text('- word: "bom"\n  english: "good"\n  confidence: 0.5\n')
-
         config.VOCABULARY_PATH = test_path
         p = _reload_progress()
 
-        # Save empty list — should NOT overwrite
-        p.save_vocabulary([])
-        content = test_path.read_text()
-        assert "bom" in content, "Empty save should not overwrite existing vocabulary"
+        entries = p.add_vocabulary([], "bom", "good")
+        p.save_vocabulary(entries)
+        assert "bom" in test_path.read_text()
 
+        p.save_vocabulary([])  # user deleted all words
+        assert test_path.read_text() == ""
+        assert p.load_vocabulary() == []
+
+        config.VOCABULARY_PATH = old_path
+
+    def test_save_none_raises(self, tmp_path):
+        import pytest
+
+        import config
+
+        old_path = config.VOCABULARY_PATH
+        config.VOCABULARY_PATH = tmp_path / "vocabulary.md"
+        p = _reload_progress()
+
+        with pytest.raises(ValueError):
+            p.save_vocabulary(None)  # type: ignore[arg-type]
+
+        config.VOCABULARY_PATH = old_path
+
+
+class TestAtomicWriteText:
+    def test_atomic_write_roundtrip_no_tmp_leftover(self, tmp_path):
+        p = _reload_progress()
+        target = tmp_path / "out.md"
+        p.atomic_write_text(target, "hello\nworld")
+        assert target.read_text() == "hello\nworld"
+        assert list(tmp_path.glob("*.tmp")) == []
+
+    def test_atomic_write_overwrites(self, tmp_path):
+        p = _reload_progress()
+        target = tmp_path / "out.md"
+        p.atomic_write_text(target, "first")
+        p.atomic_write_text(target, "second")
+        assert target.read_text() == "second"
+
+
+class TestVocabRoundTripAdversarial:
+    """Values with quotes/newlines/looks-like-a-record text survive a save+load."""
+
+    def _roundtrip(self, tmp_path, entries):
+        import config
+
+        old_path = config.VOCABULARY_PATH
+        config.VOCABULARY_PATH = tmp_path / "vocabulary.md"
+        p = _reload_progress()
+        p.save_vocabulary(entries)
+        loaded = p.load_vocabulary()
+        config.VOCABULARY_PATH = old_path
+        return loaded
+
+    def _entry(self, word, english, context):
+        return {
+            "word": word,
+            "english": english,
+            "context": context,
+            "ease": 2.5,
+            "interval": 1,
+            "last_reviewed": "2026-01-01",
+            "confidence": 0.3,
+            "needs_review": True,
+        }
+
+    def test_quotes_in_values(self, tmp_path):
+        entries = [self._entry('dizer "olá"', 'say "hello"', 'Ele disse "adeus" hoje.')]
+        loaded = self._roundtrip(tmp_path, entries)
+        assert loaded[0]["word"] == 'dizer "olá"'
+        assert loaded[0]["english"] == 'say "hello"'
+        assert loaded[0]["context"] == 'Ele disse "adeus" hoje.'
+
+    def test_newlines_in_values(self, tmp_path):
+        entries = [self._entry("bom dia", "good morning", "line one\nline two")]
+        loaded = self._roundtrip(tmp_path, entries)
+        assert loaded[0]["word"] == "bom dia"
+        assert loaded[0]["context"] == "line one\nline two"
+
+    def test_record_marker_inside_context_does_not_split(self, tmp_path):
+        marker = "\n- word: fake"
+        entries = [self._entry("real", "real word", f"note {marker} trap")]
+        loaded = self._roundtrip(tmp_path, entries)
+        assert len(loaded) == 1
+        assert loaded[0]["context"] == f"note {marker} trap"
+
+    def test_unicode_roundtrip(self, tmp_path):
+        entries = [self._entry("pão", "bread", "O pão está na mesação ção")]
+        loaded = self._roundtrip(tmp_path, entries)
+        assert loaded[0]["word"] == "pão"
+        assert loaded[0]["context"] == "O pão está na mesação ção"
+
+    def test_backslashes_roundtrip(self, tmp_path):
+        entries = [self._entry("a\\b", "c\\d", "e\\nf")]
+        loaded = self._roundtrip(tmp_path, entries)
+        assert loaded[0]["word"] == "a\\b"
+        assert loaded[0]["english"] == "c\\d"
+        assert loaded[0]["context"] == "e\\nf"
+
+    def test_multiple_adversarial_entries(self, tmp_path):
+        entries = [
+            self._entry('um "dois"', "one", "\n- word: impostor"),
+            self._entry("três\nquatro", "three", "cols: a: b"),
+            self._entry("cinco", "five", ""),
+        ]
+        loaded = self._roundtrip(tmp_path, entries)
+        assert [(e["word"], e["english"], e["context"]) for e in loaded] == [
+            ('um "dois"', "one", "\n- word: impostor"),
+            ("três\nquatro", "three", "cols: a: b"),
+            ("cinco", "five", ""),
+        ]
+        # SRS fields still parse
+        assert all(e["ease"] == 2.5 and e["confidence"] == 0.3 for e in loaded)
+
+    def test_legacy_quoted_file_still_loads(self, tmp_path):
+        import config
+
+        old_path = config.VOCABULARY_PATH
+        test_path = tmp_path / "vocabulary.md"
+        test_path.write_text('- word: "bom"\n  english: "good"\n  context: "É bom!"\n')
+        config.VOCABULARY_PATH = test_path
+        p = _reload_progress()
+        loaded = p.load_vocabulary()
+        assert loaded[0]["word"] == "bom"
+        assert loaded[0]["english"] == "good"
+        assert loaded[0]["context"] == "É bom!"
         config.VOCABULARY_PATH = old_path
 
 
