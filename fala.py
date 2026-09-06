@@ -97,6 +97,22 @@ def main():
             console.print(Panel(stats, title="[bold]Stats[/bold]", border_style="green"))
             continue
 
+        if stripped == "/review":
+            drill = engine.get_review_drill()
+            if not drill:
+                console.print("[dim]Nothing due for review. Continue chatting![/dim]")
+                continue
+            right = 0
+            for item in drill:
+                ans = Prompt.ask(f"[bold blue]Diz em português[/bold blue] ({item['english']})")
+                if engine.submit_review_answer(item["word"], ans):
+                    right += 1
+                    console.print("[green]Boa![/green]")
+                else:
+                    console.print(f"[yellow]Quase — {item['word']}[/yellow]")
+            console.print(f"[dim]Review: {right}/{len(drill)} right.[/dim]")
+            continue
+
         if not stripped:
             continue
 

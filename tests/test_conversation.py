@@ -1235,3 +1235,92 @@ class TestContextWindowing:
         fresh._warmup_done = False
         assert fresh.load_checkpoint() is True
         assert len(fresh.messages) == 41  # full list, not the window
+
+
+class TestReviewDrill:
+    def _make_engine(self, vocab):
+        from conversation import ConversationEngine
+
+        with patch("conversation.ConversationEngine._build_system_prompt"):
+            with patch("conversation.load_summary", return_value=""):
+                with patch("conversation.load_vocabulary", return_value=vocab):
+                    with patch("conversation.OpenAI"):
+                        return ConversationEngine()
+
+    def test_drill_lists_due_words_without_llm(self):
+        engine = self._make_engine(
+            [
+                {
+                    "word": "sopa",
+                    "english": "soup",
+                    "ease": 2.5,
+                    "interval": 1,
+                    "last_reviewed": "2020-01-01",
+                    "confidence": 0.3,
+                    "needs_review": True,
+                }
+            ]
+        )
+        drill = engine.get_review_drill()
+        assert drill == [{"word": "sopa", "english": "soup"}]
+
+    def test_submit_right_answer_grades_and_saves(self, tmp_path):
+        from config import UserPaths
+
+        engine = self._make_engine(
+            [
+                {
+                    "word": "sopa",
+                    "english": "soup",
+                    "ease": 2.5,
+                    "interval": 1,
+                    "last_reviewed": "2020-01-01",
+                    "confidence": 0.3,
+                    "needs_review": True,
+                }
+            ]
+        )
+        data = tmp_path / "d"
+        (data / "sessions").mkdir(parents=True)
+        (data / "records").mkdir(parents=True)
+        engine.paths = UserPaths(
+            user_id="u1",
+            data_dir=data,
+            summary=data / "summary.md",
+            vocabulary=data / "vocabulary.md",
+            sessions=data / "sessions",
+            records=data / "records",
+        )
+        assert engine.submit_review_answer("sopa", "SOPA!") is True
+        assert engine.vocabulary[0]["confidence"] > 0.3
+        assert (data / "vocabulary.md").exists()
+
+    def test_submit_wrong_answer_resets(self, tmp_path):
+        from config import UserPaths
+
+        engine = self._make_engine(
+            [
+                {
+                    "word": "sopa",
+                    "english": "soup",
+                    "ease": 2.5,
+                    "interval": 5,
+                    "last_reviewed": "2020-01-01",
+                    "confidence": 0.7,
+                    "needs_review": False,
+                }
+            ]
+        )
+        data = tmp_path / "d"
+        (data / "sessions").mkdir(parents=True)
+        (data / "records").mkdir(parents=True)
+        engine.paths = UserPaths(
+            user_id="u1",
+            data_dir=data,
+            summary=data / "summary.md",
+            vocabulary=data / "vocabulary.md",
+            sessions=data / "sessions",
+            records=data / "records",
+        )
+        assert engine.submit_review_answer("sopa", "adeus") is False
+        assert engine.vocabulary[0]["needs_review"] is True

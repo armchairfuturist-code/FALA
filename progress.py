@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -376,3 +378,16 @@ def get_vocab_for_prompt(entries: list[VocabEntry], count: int = 15) -> str:
             f"[review direction: {direction}]"
         )
     return "\n".join(lines)
+
+
+def normalize_answer(text: str) -> str:
+    """Accent/case/punct-blind compare form: 'Você Está Bem?' -> 'voce esta bem'."""
+    text = unicodedata.normalize("NFD", text.lower())
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    text = re.sub(r"[^\w\s]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def check_review_answer(expected: str, given: str) -> bool:
+    """True when the learner's PT production matches, ignoring accents/case."""
+    return bool(given.strip()) and normalize_answer(given) == normalize_answer(expected)

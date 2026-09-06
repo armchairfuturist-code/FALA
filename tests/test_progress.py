@@ -611,3 +611,21 @@ class TestVocabularyReport:
         assert report["mature_words"] == 2
         assert report["average_confidence"] == pytest.approx(0.6, rel=1e-6)
         assert report["due_for_review"] == 1
+
+
+class TestReviewAnswerCheck:
+    def test_accent_blind_match(self):
+        p = _reload_progress()
+        assert p.check_review_answer("você está bem", "voce esta bem") is True
+
+    def test_case_and_punct_blind(self):
+        p = _reload_progress()
+        assert p.check_review_answer("Bom dia!", "bom DIA") is True
+
+    def test_wrong_answer_fails(self):
+        p = _reload_progress()
+        assert p.check_review_answer("obrigado", "adeus") is False
+
+    def test_blank_never_passes(self):
+        p = _reload_progress()
+        assert p.check_review_answer("sim", "   ") is False

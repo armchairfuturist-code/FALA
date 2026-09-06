@@ -19,6 +19,7 @@ from config import (
 from progress import (
     add_vocabulary,
     atomic_write_text,
+    check_review_answer,
     get_review_words,
     get_vocab_for_prompt,
     load_summary,
@@ -111,6 +112,23 @@ class ConversationEngine:
             parts.append(f"Words due for review: {len(review)}")
         parts.append(f"Session started: {self.session_start.strftime('%Y-%m-%d %H:%M')}")
         return " | ".join(parts)
+
+    def get_review_drill(self, count: int = 5) -> list[dict]:
+        """Due words as EN→PT production prompts. No LLM call, works offline."""
+        return [
+            {"word": e["word"], "english": e.get("english", "")}
+            for e in get_review_words(self.vocabulary, count)
+        ]
+
+    def submit_review_answer(self, word: str, given: str) -> bool:
+        """Grade one drill answer, update SRS, persist. Returns True if right."""
+        expected = next(
+            (e["word"] for e in self.vocabulary if e["word"].lower() == word.lower()), word
+        )
+        correct = check_review_answer(expected, given)
+        self.vocabulary = update_vocab_after_review(self.vocabulary, expected, correct)
+        save_vocabulary(self.vocabulary, paths=self.paths)
+        return correct
 
     def get_stats(self) -> str:
         """Return CEFR breakdown + SRS stats for mid-session /stats command."""
