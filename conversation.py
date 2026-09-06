@@ -24,6 +24,7 @@ from progress import (
     get_vocab_for_prompt,
     load_summary,
     load_vocabulary,
+    pick_session_mode,
     save_learning_record,
     save_summary,
     save_vocabulary,
@@ -108,6 +109,7 @@ class ConversationEngine:
         parts = [f"Level: {level}"]
         if sessions > 0:
             parts.append(f"Sessions: {sessions}")
+        parts.append(f"Focus: {pick_session_mode(self.vocabulary, sessions)}")
         if review:
             parts.append(f"Words due for review: {len(review)}")
         parts.append(f"Session started: {self.session_start.strftime('%Y-%m-%d %H:%M')}")
@@ -115,9 +117,11 @@ class ConversationEngine:
 
     def get_review_drill(self, count: int = 5) -> list[dict]:
         """Due words as EN→PT production prompts. No LLM call, works offline."""
+        from progress import get_due_with_decay
+
         return [
             {"word": e["word"], "english": e.get("english", "")}
-            for e in get_review_words(self.vocabulary, count)
+            for e in get_due_with_decay(self.vocabulary, count)
         ]
 
     def submit_review_answer(self, word: str, given: str) -> bool:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import unicodedata
@@ -264,6 +265,93 @@ def save_vocabulary(entries: list[VocabEntry], paths: UserPaths | None = None):
     atomic_write_text(p.vocabulary, "\n".join(lines))
 
 
+# ---------------------------------------------------------------------------
+# SRS core: decay, dual EMA, balanced pick (open-course-cli port)
+# ---------------------------------------------------------------------------
+
+# Confidence scale is 0..1. Due below 0.5, done at/above 0.8.
+MASTERY_DUE = 0.5
+MASTERY_DONE = 0.8
+# Forgetting: ~5%/day. effective = confidence * exp(-0.05 * days).
+DECAY_RATE = 0.05
+# Review cadence: every 3rd session, every 2nd when backlog >= 5.
+REVIEW_EVERY = 3
+REVIEW_BACKLOG = 5
+REVIEW_BACKLOG_EVERY = 2
+# CEFR band order for the frontier gate.
+_BAND_ORDER = ("A1", "A2", "B1", "B2+")
+
+
+def _days_since(date_str: str, now: datetime) -> float:
+    try:
+        then = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return 0.0
+    return max(0, (now.date() - then).days)
+
+
+def effective_confidence(entry: VocabEntry, now: datetime | None = None) -> float:
+    """Decayed confidence: what the learner likely retains today."""
+    base = float(entry.get("confidence", 0.0))
+    days = _days_since(entry.get("last_reviewed", "1970-01-01"), now or datetime.now())
+    return round(base * math.exp(-DECAY_RATE * days), 4)
+
+
+def get_due_with_decay(
+    entries: list[VocabEntry], count: int | None = None
+) -> list[VocabEntry]:
+    """Due words by decayed confidence, weakest first.
+
+    Due = effective confidence below MASTERY_DUE or needs_review flag set.
+    """
+    if count is None:
+        count = int(GUARDRAILS["min_review_words_per_warmup"])
+    now = datetime.now()
+    due = [
+        e
+        for e in entries
+        if e.get("needs_review", False) or effective_confidence(e, now) < MASTERY_DUE
+    ]
+    due.sort(key=lambda x: effective_confidence(x, now))
+    return due[:count]
+
+
+def adaptive_alpha(confidence: float) -> float:
+    """EMA rate for correct answers: 0.45 weak … 0.1 strong."""
+    return 0.1 + 0.35 * (1.0 - min(1.0, max(0.0, confidence)))
+
+
+ITEM_ALPHA = 0.34  # EMA rate toward 0.0 on wrong answers.
+
+
+def _band_of(word: str) -> str:
+    rank = _load_frequency_words().get(word.lower())
+    if rank is None:
+        return "B2+"
+    return _cefr_band(rank)
+
+
+def pick_session_mode(entries: list[VocabEntry], session_count: int) -> str:
+    """'review' or 'new': every 3rd session reviews (2nd when backlog >= 5).
+
+    A 'new' word above frontier+1 still yields 'review' when anything is due:
+    close lower-band gaps before fresh hard material.
+    """
+    now = datetime.now()
+    due = [e for e in entries if effective_confidence(e, now) < MASTERY_DUE]
+    if not due:
+        return "new"
+    every = REVIEW_BACKLOG_EVERY if len(due) >= REVIEW_BACKLOG else REVIEW_EVERY
+    if (session_count + 1) % every == 0:
+        return "review"
+    unfinished = [b for e in entries if (b := _band_of(e.get("word", ""))) in _BAND_ORDER]
+    if unfinished:
+        frontier = min(_BAND_ORDER.index(b) for b in unfinished)
+        if frontier + 1 < len(_BAND_ORDER) - 1:
+            return "review"
+    return "new"
+
+
 def get_review_words(entries: list[VocabEntry], count: int | None = None) -> list[VocabEntry]:
     if count is None:
         count = int(GUARDRAILS["min_review_words_per_warmup"])
@@ -312,14 +400,17 @@ def update_vocab_after_review(
         if e["word"].lower() == word_lower:
             today = datetime.now().strftime("%Y-%m-%d")
             e["last_reviewed"] = today
+            base = float(e.get("confidence", 0.5))
             if correct:
-                e["confidence"] = min(1.0, e.get("confidence", 0.5) + 0.15)
+                # Topic-style adaptive EMA toward 1.0: weak moves fast.
+                e["confidence"] = min(1.0, base + adaptive_alpha(base) * (1.0 - base))
                 e["ease"] = max(1.3, e.get("ease", 2.5) + 0.1)
                 e["interval"] = max(1, int(e.get("interval", 1) * e["ease"]))
-                if e["confidence"] >= 0.8:
+                if e["confidence"] >= MASTERY_DONE:
                     e["needs_review"] = False
             else:
-                e["confidence"] = max(0.0, e.get("confidence", 0.5) - 0.2)
+                # Item-style fixed EMA toward 0.0.
+                e["confidence"] = max(0.0, base * (1.0 - ITEM_ALPHA))
                 e["ease"] = max(1.3, e.get("ease", 2.5) - 0.2)
                 e["interval"] = 1
                 e["needs_review"] = True

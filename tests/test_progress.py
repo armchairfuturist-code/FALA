@@ -105,28 +105,28 @@ class TestUpdateVocabAfterReview:
         p = _reload_progress()
         entries = [self._make_entry(confidence=0.5)]
         entries = p.update_vocab_after_review(entries, "teste", correct=True)
-        assert entries[0]["confidence"] == 0.65  # 0.5 + 0.15
+        assert entries[0]["confidence"] == pytest.approx(0.6375)  # EMA .5 + .275*.5
         assert entries[0]["interval"] > 1
 
     def test_correct_answer_caps_confidence(self):
         p = _reload_progress()
         entries = [self._make_entry(confidence=0.95)]
         entries = p.update_vocab_after_review(entries, "teste", correct=True)
-        assert entries[0]["confidence"] == 1.0
+        assert entries[0]["confidence"] == pytest.approx(0.9559, rel=1e-4)
 
     def test_incorrect_answer_resets(self):
         p = _reload_progress()
         entries = [self._make_entry(confidence=0.7, interval=10, ease=2.5)]
         entries = p.update_vocab_after_review(entries, "teste", correct=False)
-        assert entries[0]["confidence"] == pytest.approx(0.5, rel=1e-6)
+        assert entries[0]["confidence"] == pytest.approx(0.462, rel=1e-4)
         assert entries[0]["interval"] == 1
         assert entries[0]["needs_review"] is True
 
     def test_high_confidence_clears_review_flag(self):
         p = _reload_progress()
-        entries = [self._make_entry(confidence=0.7)]
+        entries = [self._make_entry(confidence=0.85)]
         entries = p.update_vocab_after_review(entries, "teste", correct=True)
-        assert entries[0]["confidence"] == 0.85
+        assert entries[0]["confidence"] == pytest.approx(0.8729, rel=1e-4)
         assert entries[0]["needs_review"] is False
 
     def test_unknown_word_no_op(self):
@@ -401,7 +401,8 @@ class TestCaseInsensitiveDuplicates:
             }
         ]
         entries = p.update_vocab_after_review(entries, "olá", correct=True)
-        assert entries[0]["confidence"] == 0.65, "Case-insensitive match should work"
+        got = entries[0]["confidence"]
+        assert got == pytest.approx(0.6375), "Case-insensitive match failed"
 
 
 class TestSaveVocabularyEmptyGuard:
@@ -629,3 +630,62 @@ class TestReviewAnswerCheck:
     def test_blank_never_passes(self):
         p = _reload_progress()
         assert p.check_review_answer("sim", "   ") is False
+
+
+class TestSrsCore:
+    def _entry(self, word, conf, last="2026-09-06", nr=False):
+        return {
+            "word": word,
+            "english": "x",
+            "context": "",
+            "ease": 2.5,
+            "interval": 1,
+            "last_reviewed": last,
+            "confidence": conf,
+            "needs_review": nr,
+        }
+
+    def test_no_decay_same_day(self):
+        p = _reload_progress()
+        today = datetime.now().strftime("%Y-%m-%d")
+        assert p.effective_confidence(self._entry("a", 0.8, last=today)) == 0.8
+
+    def test_decay_20_days(self):
+        p = _reload_progress()
+        old = (datetime.now() - timedelta(days=20)).strftime("%Y-%m-%d")
+        assert p.effective_confidence(self._entry("a", 1.0, last=old)) == pytest.approx(
+            0.3679, rel=1e-3
+        )
+
+    def test_adaptive_alpha_weak_fast_strong_slow(self):
+        p = _reload_progress()
+        assert p.adaptive_alpha(0.0) == pytest.approx(0.45)
+        assert p.adaptive_alpha(1.0) == pytest.approx(0.1)
+
+    def test_due_decay_weakest_first(self):
+        p = _reload_progress()
+        today = datetime.now().strftime("%Y-%m-%d")
+        entries = [
+            self._entry("strong", 0.9, last=today),
+            self._entry("weak", 0.4, last=today),
+        ]
+        due = p.get_due_with_decay(entries, count=5)
+        assert [e["word"] for e in due] == ["weak"]
+
+    def test_pick_new_when_nothing_due(self):
+        p = _reload_progress()
+        today = datetime.now().strftime("%Y-%m-%d")
+        assert p.pick_session_mode([self._entry("a", 0.9, last=today)], 2) == "new"
+
+    def test_pick_review_every_third(self):
+        p = _reload_progress()
+        today = datetime.now().strftime("%Y-%m-%d")
+        entries = [self._entry("zzqxj", 0.2, last=today, nr=True)]
+        assert p.pick_session_mode(entries, 2) == "review"
+        assert p.pick_session_mode(entries, 0) == "new"
+
+    def test_pick_review_every_second_on_backlog(self):
+        p = _reload_progress()
+        today = datetime.now().strftime("%Y-%m-%d")
+        entries = [self._entry(f"w{i}", 0.2, last=today, nr=True) for i in range(6)]
+        assert p.pick_session_mode(entries, 1) == "review"

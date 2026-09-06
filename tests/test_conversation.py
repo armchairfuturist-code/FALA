@@ -504,7 +504,7 @@ class TestExtractVocabFromExchange:
                         ]
                         engine._extract_vocab_from_exchange("Olá!", "Boa! Olá!")
                         entry = engine.vocabulary[0]
-                        assert entry["confidence"] == 0.65  # 0.5 + 0.15
+                        assert entry["confidence"] == pytest.approx(0.6375)
                         assert entry["interval"] > 1
                         assert entry["last_reviewed"] != "2026-01-01"
 
@@ -535,7 +535,7 @@ class TestExtractVocabFromExchange:
                         ]
                         engine._extract_vocab_from_exchange("bom dia", "correction")
                         entry = engine.vocabulary[0]
-                        assert entry["confidence"] == pytest.approx(0.5, rel=1e-6)  # 0.7 - 0.2
+                        assert entry["confidence"] == pytest.approx(0.462, rel=1e-4)  # 0.7 * .66
                         assert entry["interval"] == 1
                         assert entry["needs_review"] is True
 
