@@ -104,7 +104,15 @@ def main():
                 continue
             right = 0
             for item in drill:
-                ans = Prompt.ask(f"[bold blue]Diz em português[/bold blue] ({item['english']})")
+                if item["cloze"]:
+                    opts = " / ".join(item["options"])
+                    ans = Prompt.ask(
+                        f"[bold blue]Completa[/bold blue] {item['cloze']} ({opts})"
+                    )
+                else:
+                    ans = Prompt.ask(
+                        f"[bold blue]Diz em português[/bold blue] ({item['english']})"
+                    )
                 if engine.submit_review_answer(item["word"], ans):
                     right += 1
                     console.print("[green]Boa![/green]")

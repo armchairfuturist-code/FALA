@@ -689,3 +689,79 @@ class TestSrsCore:
         today = datetime.now().strftime("%Y-%m-%d")
         entries = [self._entry(f"w{i}", 0.2, last=today, nr=True) for i in range(6)]
         assert p.pick_session_mode(entries, 1) == "review"
+
+
+class TestCloze:
+    def _entries(self):
+        return [
+            {
+                "word": "sopa",
+                "english": "soup",
+                "context": "Vou pedir uma sopa, por favor.",
+                "ease": 2.5,
+                "interval": 1,
+                "last_reviewed": "2026-01-01",
+                "confidence": 0.3,
+                "needs_review": True,
+            },
+            {
+                "word": "café",
+                "english": "coffee",
+                "context": "",
+                "ease": 2.5,
+                "interval": 1,
+                "last_reviewed": "2026-01-01",
+                "confidence": 0.3,
+                "needs_review": True,
+            },
+        ]
+
+    def test_blank_inserted_by_code(self):
+        p = _reload_progress()
+        c = p.make_cloze(self._entries(), "sopa")
+        assert c["prompt"] == "Vou pedir uma _____, por favor."
+        assert c["answer"] == "sopa"
+        assert "sopa" in c["options"] and "café" in c["options"]
+
+    def test_fallback_without_context(self):
+        p = _reload_progress()
+        c = p.make_cloze(self._entries(), "café")
+        assert c["prompt"] == "" and c["answer"] == "café"
+
+
+def test_warmup_forces_due_words():
+    text = (Path(__file__).resolve().parent.parent / "prompts" / "warmup.md").read_text()
+    assert "embed at least 3 of them" in text
+
+
+class TestConfusions:
+    def test_add_and_dedupe(self):
+        p = _reload_progress()
+        pairs = []
+        p.add_confusion(pairs, "ser", "estar", "both mean be")
+        p.add_confusion(pairs, "Estar", "Ser")
+        assert len(pairs) == 1
+        assert pairs[0]["note"] == "both mean be"
+
+    def test_self_pair_rejected(self):
+        p = _reload_progress()
+        pairs = []
+        p.add_confusion(pairs, "sim", "Sim")
+        assert pairs == []
+
+    def test_save_load_roundtrip(self, tmp_path):
+        import config
+
+        old = config.DATA_DIR
+        config.DATA_DIR = tmp_path
+        p = _reload_progress()
+        pairs = []
+        p.add_confusion(pairs, "ser", "estar", "be x2")
+        p.save_confusions(pairs)
+        assert p.load_confusions() == [{"a": "ser", "b": "estar", "note": "be x2"}]
+        config.DATA_DIR = old
+
+    def test_prompt_shows_mix_lines(self):
+        p = _reload_progress()
+        out = p.get_vocab_for_prompt([], confusions=[{"a": "ser", "b": "estar", "note": ""}])
+        assert "Easy to mix: ser ↔ estar" in out

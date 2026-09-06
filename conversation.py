@@ -17,14 +17,18 @@ from config import (
     paths_for_user,
 )
 from progress import (
+    add_confusion,
     add_vocabulary,
     atomic_write_text,
     check_review_answer,
+    confused_words,
     get_review_words,
     get_vocab_for_prompt,
+    load_confusions,
     load_summary,
     load_vocabulary,
     pick_session_mode,
+    save_confusions,
     save_learning_record,
     save_summary,
     save_vocabulary,
@@ -51,6 +55,7 @@ class ConversationEngine:
         self.client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
         self.summary = load_summary(paths=self.paths)
         self.vocabulary = load_vocabulary(paths=self.paths)
+        self.confusions = load_confusions(paths=self.paths)
         self.messages: list[ChatCompletionMessageParam] = []
         self.session_log: list[str] = []
         self.history: list[dict] = []  # [{role: user|tutor, content}] for the web UI
@@ -65,7 +70,7 @@ class ConversationEngine:
         content = template.format(
             level=level,
             summary=self.summary,
-            vocabulary=get_vocab_for_prompt(self.vocabulary),
+            vocabulary=get_vocab_for_prompt(self.vocabulary, confusions=self.confusions),
         )
         self.messages = [{"role": "system", "content": content}]
 
@@ -116,13 +121,25 @@ class ConversationEngine:
         return " | ".join(parts)
 
     def get_review_drill(self, count: int = 5) -> list[dict]:
-        """Due words as EN→PT production prompts. No LLM call, works offline."""
-        from progress import get_due_with_decay
+        """Due words as production prompts: cloze gap-fill when the word has
+        a context sentence, else EN→PT. No LLM call, works offline."""
+        from progress import get_due_with_decay, make_cloze
 
-        return [
-            {"word": e["word"], "english": e.get("english", "")}
-            for e in get_due_with_decay(self.vocabulary, count)
-        ]
+        drill = []
+        due = get_due_with_decay(self.vocabulary, count)
+        mixed = confused_words(self.confusions)
+        due.sort(key=lambda e: (e["word"].lower() not in mixed))
+        for e in due:
+            cloze = make_cloze(self.vocabulary, e["word"])
+            drill.append(
+                {
+                    "word": e["word"],
+                    "english": e.get("english", ""),
+                    "cloze": cloze["prompt"],
+                    "options": cloze["options"],
+                }
+            )
+        return drill
 
     def submit_review_answer(self, word: str, given: str) -> bool:
         """Grade one drill answer, update SRS, persist. Returns True if right."""
@@ -160,7 +177,9 @@ class ConversationEngine:
         # past sentences — 15 candidates oversell the review load.
         content = template.format(
             summary=self.summary,
-            vocabulary=get_vocab_for_prompt(self.vocabulary, count=5),
+            vocabulary=get_vocab_for_prompt(
+                self.vocabulary, count=5, confusions=self.confusions
+            ),
         )
         self.messages.append({"role": "user", "content": content})
         prompt_idx = len(self.messages) - 1
@@ -267,11 +286,14 @@ class ConversationEngine:
             "Analyse this learner-tutor exchange and return a JSON object.\n\n"
             "1. Extract any NEW Portuguese vocabulary words introduced by the tutor.\n"
             "2. For each review word that the LEARNER attempted to use (not the tutor), "
-            "assess whether the learner used it correctly.\n\n"
+            "assess whether the learner used it correctly.\n"
+            "3. Note any pair of words the learner mixed up "
+            '(e.g. "ser" vs "estar").\n\n'
             "Return ONLY JSON with this shape, no other text:\n"
             "{\n"
             '  "new_words": [{"word": "...", "english": "...", "context": "..."}],\n'
             '  "assessments": [{"word": "...", "correct": true}],\n'
+            '  "confusions": [{"pair": ["...", "..."], "note": "..."}],\n'
             '  "notes": "..."\n'
             "}\n\n"
         )
@@ -317,6 +339,16 @@ class ConversationEngine:
                     self.vocabulary = update_vocab_after_review(
                         self.vocabulary, a["word"], a["correct"]
                     )
+
+            # Track mix-up pairs apart from word records
+            for c in data.get("confusions", []):
+                pair = c.get("pair", []) if isinstance(c, dict) else []
+                if len(pair) == 2:
+                    self.confusions = add_confusion(
+                        self.confusions, pair[0], pair[1], c.get("note", "")
+                    )
+            if data.get("confusions"):
+                save_confusions(self.confusions, paths=self.paths)
         except Exception:
             # Vocabulary extraction failing must not kill the conversation
             # turn, but it must not be silent either (audit 2026 #6).
@@ -357,6 +389,7 @@ class ConversationEngine:
                     "history": self.history,
                     "new_words": self.new_words,
                     "vocabulary": self.vocabulary,
+                    "confusions": self.confusions,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -379,6 +412,7 @@ class ConversationEngine:
             self.history = data.get("history", [])
             self.new_words = data["new_words"]
             self.vocabulary = data["vocabulary"]
+            self.confusions = data.get("confusions", [])
             self._warmup_done = data["warmup_done"]
             return True
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:

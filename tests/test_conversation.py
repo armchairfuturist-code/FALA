@@ -1262,7 +1262,8 @@ class TestReviewDrill:
             ]
         )
         drill = engine.get_review_drill()
-        assert drill == [{"word": "sopa", "english": "soup"}]
+        assert drill[0]["word"] == "sopa"
+        assert drill[0]["english"] == "soup"
 
     def test_submit_right_answer_grades_and_saves(self, tmp_path):
         from config import UserPaths
@@ -1324,3 +1325,36 @@ class TestReviewDrill:
         )
         assert engine.submit_review_answer("sopa", "adeus") is False
         assert engine.vocabulary[0]["needs_review"] is True
+
+
+class TestConfusionCapture:
+    def test_extraction_saves_confusions(self, tmp_path):
+        from config import UserPaths
+        from conversation import ConversationEngine
+
+        with patch("conversation.ConversationEngine._build_system_prompt"):
+            with patch("conversation.load_summary", return_value=""):
+                with patch("conversation.load_vocabulary", return_value=[]):
+                    with patch("conversation.OpenAI") as mock_client:
+                        mock_client.return_value.chat.completions.create.return_value = (
+                            _fake_completion(
+                                '{"new_words": [], "assessments": [], '
+                                '"confusions": [{"pair": ["ser", "estar"], '
+                                '"note": "both mean be"}]}'
+                            )
+                        )
+                        engine = ConversationEngine()
+        data = tmp_path / "d"
+        (data / "sessions").mkdir(parents=True)
+        (data / "records").mkdir(parents=True)
+        engine.paths = UserPaths(
+            user_id="u1",
+            data_dir=data,
+            summary=data / "summary.md",
+            vocabulary=data / "vocabulary.md",
+            sessions=data / "sessions",
+            records=data / "records",
+        )
+        engine._extract_vocab_from_exchange("sou", "és?")
+        assert engine.confusions == [{"a": "ser", "b": "estar", "note": "both mean be"}]
+        assert (data / "confusions.md").exists()

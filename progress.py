@@ -456,9 +456,13 @@ def save_learning_record(title: str, content: str, paths: UserPaths | None = Non
     atomic_write_text(path, f"# {title}\n\nDate: {stamp}\n\n{content}\n")
 
 
-def get_vocab_for_prompt(entries: list[VocabEntry], count: int = 15) -> str:
+def get_vocab_for_prompt(
+    entries: list[VocabEntry],
+    count: int = 15,
+    confusions: list[Confusion] | None = None,
+) -> str:
     review = get_review_words_with_direction(entries, count)
-    if not review:
+    if not review and not confusions:
         return "(no vocabulary yet — this is the first session)"
     lines = []
     for e in review:
@@ -468,6 +472,8 @@ def get_vocab_for_prompt(entries: list[VocabEntry], count: int = 15) -> str:
             f"- {e['word']} ({e.get('english', '?')}) — confidence: {conf:.0%} "
             f"[review direction: {direction}]"
         )
+    for c in (confusions or [])[:3]:
+        lines.append(f"- Easy to mix: {c['a']} ↔ {c['b']}")
     return "\n".join(lines)
 
 
@@ -482,3 +488,90 @@ def normalize_answer(text: str) -> str:
 def check_review_answer(expected: str, given: str) -> bool:
     """True when the learner's PT production matches, ignoring accents/case."""
     return bool(given.strip()) and normalize_answer(given) == normalize_answer(expected)
+
+
+def make_cloze(entries: list[VocabEntry], word: str) -> dict:
+    """Code-built gap-fill: blank the word in its own context sentence.
+
+    Blank inserted by regex at word bounds — never by the LLM. Options are
+    the answer plus up to 3 other known PT words, sorted for determinism.
+    Falls back to plain EN→PT when the word is absent from its context.
+    """
+    target = next((e for e in entries if e["word"].lower() == word.lower()), None)
+    answer = target["word"] if target else word
+    context = (target.get("context", "") if target else "") or ""
+    blanked = re.sub(rf"\b{re.escape(answer)}\b", "_____", context, count=1,
+                     flags=re.IGNORECASE)
+    if blanked == context:
+        return {"prompt": "", "answer": answer, "options": []}
+    others = sorted({e["word"] for e in entries if e["word"].lower() != answer.lower()})
+    options = sorted([answer] + others[:3], key=str.lower)
+    return {"prompt": blanked, "answer": answer, "options": options}
+
+
+# ---------------------------------------------------------------------------
+# Confusions: word pairs the learner mixes up ("ser vs estar").
+# Stored apart from vocab so pair notes never pollute word records.
+# ---------------------------------------------------------------------------
+
+CONFUSIONS_FILENAME = "confusions.md"
+CONFUSIONS_CAP = 50
+Confusion = dict[str, str]  # {"a": ..., "b": ..., "note": ...}
+
+
+def _confusions_path(paths: UserPaths | None) -> Path:
+    return _resolve(paths).data_dir / CONFUSIONS_FILENAME
+
+
+def _confusion_key(a: str, b: str) -> tuple[str, str]:
+    return tuple(sorted([a.strip().lower(), b.strip().lower()]))  # type: ignore[return-value]
+
+
+def load_confusions(paths: UserPaths | None = None) -> list[Confusion]:
+    path = _confusions_path(paths)
+    if not path.exists():
+        return []
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if "<->" not in line:
+            continue
+        pair, _, note = line.partition(" // ")
+        a, _, b = pair.partition("<->")
+        a, b = a.strip(), b.strip()
+        if a and b:
+            out.append({"a": a, "b": b, "note": note.strip()})
+    return out
+
+
+def save_confusions(pairs: list[Confusion], paths: UserPaths | None = None) -> None:
+    lines = []
+    for p in pairs[:CONFUSIONS_CAP]:
+        line = f"{p['a']} <-> {p['b']}"
+        if p.get("note"):
+            line += f" // {p['note'].replace(chr(10), ' ')}"
+        lines.append(line)
+    atomic_write_text(_confusions_path(paths), "\n".join(lines) + ("\n" if lines else ""))
+
+
+def add_confusion(
+    pairs: list[Confusion], a: str, b: str, note: str = ""
+) -> list[Confusion]:
+    """Add a mix-up pair. Dedupe case-blind; refresh note when given."""
+    if not a.strip() or not b.strip() or a.strip().lower() == b.strip().lower():
+        return pairs
+    key = _confusion_key(a, b)
+    for p in pairs:
+        if _confusion_key(p["a"], p["b"]) == key:
+            if note:
+                p["note"] = note
+            return pairs
+    pairs.append({"a": a.strip(), "b": b.strip(), "note": note})
+    return pairs
+
+
+def confused_words(pairs: list[Confusion]) -> set[str]:
+    out: set[str] = set()
+    for p in pairs:
+        out.add(p["a"].lower())
+        out.add(p["b"].lower())
+    return out
