@@ -149,3 +149,17 @@ def test_new_sentences_carry_english_gloss():
 def test_gloss_free_recall_reserved_for_review():
     system = read("system.md")
     assert "REVIEW sentences only" in system
+
+
+def test_offline_pt_fixtures_pass():
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parent.parent
+    r = subprocess.run(
+        [sys.executable, str(repo / "eval" / "check_pt.py")],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
