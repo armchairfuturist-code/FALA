@@ -1358,3 +1358,44 @@ class TestConfusionCapture:
         engine._extract_vocab_from_exchange("sou", "és?")
         assert engine.confusions == [{"a": "ser", "b": "estar", "note": "both mean be"}]
         assert (data / "confusions.md").exists()
+
+
+class TestStatsTrend:
+    def test_stats_show_accuracy_and_weakest(self, tmp_path):
+        from config import UserPaths
+        from conversation import ConversationEngine
+
+        with patch("conversation.ConversationEngine._build_system_prompt"):
+            with patch("conversation.load_summary", return_value=""):
+                with patch(
+                    "conversation.load_vocabulary",
+                    return_value=[
+                        {
+                            "word": "sopa",
+                            "english": "soup",
+                            "context": "",
+                            "ease": 2.5,
+                            "interval": 1,
+                            "last_reviewed": "2020-01-01",
+                            "confidence": 0.3,
+                            "needs_review": True,
+                        }
+                    ],
+                ):
+                    with patch("conversation.OpenAI"):
+                        engine = ConversationEngine()
+        data = tmp_path / "d"
+        (data / "sessions").mkdir(parents=True)
+        (data / "records").mkdir(parents=True)
+        engine.paths = UserPaths(
+            user_id="u1",
+            data_dir=data,
+            summary=data / "summary.md",
+            vocabulary=data / "vocabulary.md",
+            sessions=data / "sessions",
+            records=data / "records",
+        )
+        assert "Review accuracy: -" in engine.get_stats()
+        assert "Weakest: sopa (30%)" in engine.get_stats()
+        engine.submit_review_answer("sopa", "sopa")
+        assert "Review accuracy (7d): 100%" in engine.get_stats()

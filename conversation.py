@@ -27,13 +27,16 @@ from progress import (
     load_confusions,
     load_summary,
     load_vocabulary,
+    log_review,
     pick_session_mode,
+    review_accuracy,
     save_confusions,
     save_learning_record,
     save_summary,
     save_vocabulary,
     update_vocab_after_review,
     vocabulary_report,
+    weak_words,
 )
 
 logger = logging.getLogger(__name__)
@@ -149,6 +152,7 @@ class ConversationEngine:
         correct = check_review_answer(expected, given)
         self.vocabulary = update_vocab_after_review(self.vocabulary, expected, correct)
         save_vocabulary(self.vocabulary, paths=self.paths)
+        log_review(expected, correct, paths=self.paths)
         return correct
 
     def get_stats(self) -> str:
@@ -167,6 +171,15 @@ class ConversationEngine:
             f"Avg confidence: {report['average_confidence']:.0%}",
             f"Due for review: {report['due_for_review']}",
         ]
+        acc, n = review_accuracy(paths=self.paths)
+        lines.append(
+            f"Review accuracy (7d): {acc:.0%} ({n} answers)" if n else "Review accuracy: -"
+        )
+        weak = [e for e in weak_words(self.vocabulary) if e.get("needs_review", True)][:5]
+        if weak:
+            lines.append(
+                "Weakest: " + ", ".join(f"{e['word']} ({e.get('confidence', 0):.0%})" for e in weak)
+            )
         return "\n".join(lines)
 
     def start_warmup(self) -> str:

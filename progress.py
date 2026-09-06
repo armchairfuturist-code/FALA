@@ -575,3 +575,45 @@ def confused_words(pairs: list[Confusion]) -> set[str]:
         out.add(p["a"].lower())
         out.add(p["b"].lower())
     return out
+
+
+# ---------------------------------------------------------------------------
+# Review log: one JSON line per graded answer. Powers accuracy trends.
+# ---------------------------------------------------------------------------
+
+REVIEWS_LOG = "reviews.jsonl"
+
+
+def log_review(word: str, correct: bool, paths: UserPaths | None = None) -> None:
+    rec = {
+        "day": datetime.now().strftime("%Y-%m-%d"),
+        "word": word,
+        "correct": bool(correct),
+    }
+    path = _resolve(paths).data_dir / REVIEWS_LOG
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def review_accuracy(days: int = 7, paths: UserPaths | None = None) -> tuple[float | None, int]:
+    """(accuracy, n) over the last `days` days. (None, 0) when no answers."""
+    path = _resolve(paths).data_dir / REVIEWS_LOG
+    if not path.exists():
+        return None, 0
+    cutoff = (datetime.now() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    hits = total = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            rec = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if rec.get("day", "") >= cutoff:
+            total += 1
+            hits += 1 if rec.get("correct") else 0
+    return (hits / total if total else None), total
+
+
+def weak_words(entries: list[VocabEntry], count: int = 5) -> list[VocabEntry]:
+    """Lowest decayed confidence first."""
+    now = datetime.now()
+    return sorted(entries, key=lambda e: effective_confidence(e, now))[:count]

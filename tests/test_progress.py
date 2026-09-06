@@ -765,3 +765,37 @@ class TestConfusions:
         p = _reload_progress()
         out = p.get_vocab_for_prompt([], confusions=[{"a": "ser", "b": "estar", "note": ""}])
         assert "Easy to mix: ser ↔ estar" in out
+
+
+class TestReviewTrend:
+    def test_log_and_accuracy(self, tmp_path):
+        import config
+
+        old = config.DATA_DIR
+        config.DATA_DIR = tmp_path
+        p = _reload_progress()
+        assert p.review_accuracy() == (None, 0)
+        p.log_review("sopa", True)
+        p.log_review("café", False)
+        acc, n = p.review_accuracy()
+        assert n == 2 and acc == 0.5
+        config.DATA_DIR = old
+
+    def test_weak_words_order(self):
+        p = _reload_progress()
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        def mk(w, c):
+            return {
+                "word": w,
+                "english": "",
+                "context": "",
+                "ease": 2.5,
+                "interval": 1,
+                "last_reviewed": today,
+                "confidence": c,
+                "needs_review": True,
+            }
+
+        weak = p.weak_words([mk("a", 0.9), mk("b", 0.2), mk("c", 0.5)], count=2)
+        assert [e["word"] for e in weak] == ["b", "c"]
