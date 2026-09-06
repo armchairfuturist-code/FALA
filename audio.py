@@ -1,3 +1,4 @@
+import hashlib
 import html
 import logging
 import os
@@ -22,6 +23,7 @@ from config import (
     TTS_PROVIDER,
     TTS_VOICE,
 )
+from speech_text import extract_speech_text  # noqa: F401 (re-export for callers)
 
 logger = logging.getLogger(__name__)
 
@@ -230,22 +232,6 @@ def _azure_text_to_speech(text: str) -> Path | None:
 # ---------------------------------------------------------------------------
 
 
-# Speech channel contract: a tutor response may end with a "---SAY---" line;
-# everything after it is the ONLY text to speak (pt-PT, no markdown).
-_SAY_MARKER = "---SAY---"
-
-
-def extract_speech_text(response: str) -> tuple[str, str | None]:
-    """Split a tutor response into (display_text, speech_text|None).
-
-    Returns speech_text=None when no ---SAY--- marker is present; the caller
-    should then speak the display text (markdown-stripped) instead.
-    """
-    if _SAY_MARKER in response:
-        display, _, speech = response.partition(_SAY_MARKER)
-        return display.strip(), speech.strip()
-    return response, None
-
 
 def _strip_markdown(text: str) -> str:
     """Remove markdown formatting that should never be read aloud."""
@@ -261,23 +247,80 @@ def _use_gpt4o() -> bool:
     return TTS_PROVIDER == "gpt4o" or os.getenv("FALA_TTS", "") == "gpt4o"
 
 
+TTS_CACHE_DIR = DATA_DIR / "tts-cache"
+TTS_CACHE_MAX_FILES = 200
+
+
+def _tts_cache_key(text: str) -> tuple[Path, str]:
+    """Cache slot for stripped text under the active provider+voice.
+
+    Returns (path, suffix): piper synthesizes wav, cloud backends mp3.
+    """
+    voice = AZURE_TTS_VOICE if TTS_PROVIDER == "azure" else TTS_VOICE
+    if _use_gpt4o():
+        voice = os.getenv("FALA_TTS_VOICE", "alloy")
+    digest = hashlib.sha1(f"{TTS_PROVIDER}|{voice}|{text}".encode("utf-8")).hexdigest()[:16]
+    suffix = ".wav" if TTS_PROVIDER == "piper" else ".mp3"
+    return TTS_CACHE_DIR / f"{digest}{suffix}", suffix
+
+
+def is_cached_audio(path: Path) -> bool:
+    """True when path lives in the TTS cache (callers must not unlink it)."""
+    try:
+        return path.parent.resolve() == TTS_CACHE_DIR.resolve()
+    except OSError:
+        return False
+
+
+def _prune_tts_cache() -> None:
+    try:
+        files = sorted(
+            TTS_CACHE_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
+        for stale in files[TTS_CACHE_MAX_FILES:]:
+            stale.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def text_to_speech(text: str) -> Path | None:
     """Synthesize speech using the configured TTS provider.
 
     Provider order: piper -> azure -> gpt4o (FALA_TTS=gpt4o) -> OpenAI tts-1.
-    Markdown is stripped before synthesis in every provider.
+    Markdown is stripped before synthesis in every provider. Results are
+    cached by (provider, voice, text): repeat lines cost zero API calls.
+    Cached paths must NOT be unlinked by callers — see is_cached_audio().
     """
     text = _strip_markdown(text)
+    if not text.strip():
+        return None
+    TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cached, _suffix = _tts_cache_key(text)
+    if cached.exists():
+        try:
+            cached.touch()
+        except OSError:
+            pass
+        return cached
     if TTS_PROVIDER == "piper":
-        return _piper_text_to_speech(text)
-    if TTS_PROVIDER == "azure":
-        return _azure_text_to_speech(text)
+        fresh = _piper_text_to_speech(text)
+    elif TTS_PROVIDER == "azure":
+        fresh = _azure_text_to_speech(text)
     # ponytail: FALA_TTS/FALA_TTS_VOICE are re-read from env here because
     # config.py is owned by another agent; move these into config.py as
     # gpt4o-specific constants once that merges.
-    if _use_gpt4o():
-        return _gpt4o_text_to_speech(text)
-    return _openai_text_to_speech(text)
+    elif _use_gpt4o():
+        fresh = _gpt4o_text_to_speech(text)
+    else:
+        fresh = _openai_text_to_speech(text)
+    if fresh is None:
+        return None
+    try:
+        os.replace(fresh, cached)
+    except OSError:
+        return fresh
+    _prune_tts_cache()
+    return cached
 
 
 def play_audio(path: Path) -> bool:
@@ -307,7 +350,8 @@ def speak(text: str) -> bool:
     path = text_to_speech(speech if speech is not None else _display)
     if path:
         ok = play_audio(path)
-        path.unlink(missing_ok=True)
+        if not is_cached_audio(path):
+            path.unlink(missing_ok=True)
         return ok
     return False
 

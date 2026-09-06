@@ -472,6 +472,8 @@ class ConversationEngine:
                     "4. Updates grammar progress if applicable\n"
                     "5. Sets the correct current level (A0/A1/A2/B1)\n"
                     "6. If the learner gave their name, set the Learner name field\n"
+                    "7. Write EXACTLY one line 'Current level: <LEVEL>' "
+                    "(e.g. 'Current level: A1') — parsers read that line.\n"
                     "IMPORTANT: For 'Total vocabulary', use ONLY the actual vocabulary list "
                     "provided below — do NOT carry over word lists from the old summary. "
                     "Count the words in the actual list.\n"
@@ -483,7 +485,8 @@ class ConversationEngine:
                 "content": (
                     f"## Actual Vocabulary (source of truth)\n{actual_vocab_list}\n\n"
                     f"## Current Summary\n{self.summary}\n\n"
-                    f"## Session Transcript\n" + "\n".join(self.session_log[-20:])
+                    f"## Session Transcript (full — nothing omitted)\n"
+                    + "\n".join(self.session_log)
                 ),
             },
         ]

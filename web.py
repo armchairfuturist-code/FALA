@@ -27,7 +27,7 @@ import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse
 
-from audio import extract_speech_text, speech_to_text, text_to_speech
+from audio import extract_speech_text, is_cached_audio, speech_to_text, text_to_speech
 from config import DATA_DIR
 from conversation import ConversationEngine
 
@@ -65,6 +65,18 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 ALLOWED_AUDIO_SUFFIXES = {".wav", ".mp3", ".webm", ".ogg", ".m4a"}
 MAX_TTS_CHARS = 4000
 MAX_STT_WAV_SECONDS = 120
+# Non-wav duration is unknown before decode: bound the work instead — at most
+# 2 concurrent transcriptions, 180 s each, so a long .webm cannot wedge the box.
+STT_MAX_CONCURRENCY = 2
+STT_TIMEOUT_SECONDS = 180
+_stt_semaphore: asyncio.Semaphore | None = None
+
+
+def _stt_limit() -> asyncio.Semaphore:
+    global _stt_semaphore
+    if _stt_semaphore is None:
+        _stt_semaphore = asyncio.Semaphore(STT_MAX_CONCURRENCY)
+    return _stt_semaphore
 
 
 def _wav_duration_seconds(data: bytes) -> float | None:
@@ -259,10 +271,17 @@ def get_session(request: Request, response: Response) -> SessionState | None:
         # Conservative scheme check — not a substitute for token opacity
         # (the real fix): the token is random and server-side, so stealing
         # it requires an active session hijack, not cookie forgery.
-        secure=request.url.scheme == "https",
+        secure=_is_secure(request),
         max_age=COOKIE_MAX_AGE,
     )
     return state
+
+
+def _is_secure(request: Request) -> bool:
+    """True behind TLS directly or via a proxy (X-Forwarded-Proto)."""
+    if request.url.scheme == "https":
+        return True
+    return request.headers.get("x-forwarded-proto", "").split(",")[0].strip() == "https"
 
 
 def get_engine(state: SessionState) -> ConversationEngine:
@@ -597,7 +616,8 @@ def authenticate(request: Request, response: Response, code: str = Form(...)):
         raise HTTPException(status_code=429, detail="Too many requests. Try again in a minute.")
     code = code.strip()
     if _code_locked(code):
-        return {"ok": False, "error": "Too many attempts. Try again later."}
+        # Same text as a wrong code: distinct errors leak valid codes.
+        return {"ok": False, "error": "Invalid invite code"}
     if _code_matches(code):
         _clear_code_failures(code)
         token = secrets.token_urlsafe(32)
@@ -607,7 +627,7 @@ def authenticate(request: Request, response: Response, code: str = Form(...)):
             token,
             httponly=True,
             samesite="lax",
-            secure=request.url.scheme == "https",
+            secure=_is_secure(request),
             max_age=COOKIE_MAX_AGE,
         )
         return {"ok": True}
@@ -788,8 +808,14 @@ async def stt(request: Request, response: Response, file: UploadFile = File(...)
     tmp.close()
     path = Path(tmp.name)
     try:
-        transcript = await asyncio.to_thread(speech_to_text, path)
+        async with _stt_limit():
+            transcript = await asyncio.wait_for(
+                asyncio.to_thread(speech_to_text, path), STT_TIMEOUT_SECONDS
+            )
         return {"transcript": transcript or ""}
+    except (TimeoutError, asyncio.TimeoutError):
+        logger.warning("stt timed out after %s s", STT_TIMEOUT_SECONDS)
+        return {"transcript": "", "error": "Transcription timed out."}
     except Exception:
         logger.exception("stt failed")
         # Never echo internal exception text to clients.
@@ -818,7 +844,8 @@ def tts(request: Request, response: Response, text: str = Form(...)):
             return {"error": "TTS synthesis failed"}
         content_type = "audio/wav" if path.suffix == ".wav" else "audio/mpeg"
         data = path.read_bytes()
-        path.unlink(missing_ok=True)
+        if not is_cached_audio(path):
+            path.unlink(missing_ok=True)
         return Response(content=data, media_type=content_type)
     except Exception:
         logger.exception("tts failed")

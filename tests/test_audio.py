@@ -727,3 +727,31 @@ class TestPiperVoiceCaching:
         monkeypatch.setattr(audio.urllib.request, "urlretrieve", lambda *a: called.append(a))
         assert audio._ensure_piper_voice() is True
         assert called == []
+
+
+class TestTTSCache:
+    def test_repeat_text_hits_cache(self, tmp_path, monkeypatch):
+        import audio
+
+        monkeypatch.setattr(audio, "TTS_CACHE_DIR", tmp_path / "cache")
+        monkeypatch.setattr(audio, "TTS_PROVIDER", "openai")
+        calls = []
+
+        def fake_backend(text):
+            calls.append(text)
+            p = tmp_path / "fresh.mp3"
+            p.write_bytes(b"fake-audio")
+            return p
+
+        monkeypatch.setattr(audio, "_openai_text_to_speech", fake_backend)
+        first = audio.text_to_speech("Olá!")
+        second = audio.text_to_speech("Olá!")
+        assert first == second and len(calls) == 1
+        assert audio.is_cached_audio(first) is True
+        assert first.exists()  # cache files persist for callers
+
+    def test_blank_text_returns_none(self, tmp_path, monkeypatch):
+        import audio
+
+        monkeypatch.setattr(audio, "TTS_CACHE_DIR", tmp_path / "cache")
+        assert audio.text_to_speech("   ") is None

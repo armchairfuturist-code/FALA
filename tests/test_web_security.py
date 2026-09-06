@@ -154,10 +154,11 @@ class TestInviteTokenAuth:
             resp = client.post("/auth", data={"code": "guess-me"})
             assert resp.json()["ok"] is False
         # The brute-forced code string is now locked out even before the
-        # per-IP rate limit (3 < 30) would trip.
+        # per-IP rate limit (3 < 30) would trip. Locked and wrong codes share
+        # one text so attackers cannot probe valid codes.
         resp = client.post("/auth", data={"code": "guess-me"})
         assert resp.json()["ok"] is False
-        assert "Too many attempts" in resp.json()["error"]
+        assert resp.json()["error"] == "Invalid invite code"
 
     def test_lockout_does_not_block_other_codes(self, client, auth_enabled, monkeypatch):
         import web

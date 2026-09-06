@@ -604,3 +604,43 @@ class TestSpeechChannel:
         assert "localStorage.getItem('fala_tts')" in HTML_PAGE
         assert "replay-btn" in HTML_PAGE
         assert "audioCache" in HTML_PAGE
+
+
+class TestWebHardening:
+    @pytest.fixture
+    def auth_enabled(self):
+        import web
+
+        old_codes, old_enabled = web.AUTH_CODES, web.AUTH_ENABLED
+        web.AUTH_CODES = {"test-code-1", "test-code-2"}
+        web.AUTH_ENABLED = True
+        web._sessions.clear()
+        yield
+        web.AUTH_CODES = old_codes
+        web.AUTH_ENABLED = old_enabled
+
+    def test_secure_flag_behind_proxy(self):
+        from unittest.mock import MagicMock
+
+        import web
+
+        plain = MagicMock()
+        plain.url.scheme = "http"
+        plain.headers = {}
+        assert web._is_secure(plain) is False
+        proxied = MagicMock()
+        proxied.url.scheme = "http"
+        proxied.headers = {"x-forwarded-proto": "https"}
+        assert web._is_secure(proxied) is True
+
+    def test_stt_timeout_returns_error(self, client, auth_enabled, monkeypatch):
+        import time
+
+        import web
+
+        client.post("/auth", data={"code": "test-code-1"})
+        monkeypatch.setattr(web, "STT_TIMEOUT_SECONDS", 0.1)
+        with patch("web.speech_to_text", side_effect=lambda p: (time.sleep(0.5), "x")[1]):
+            resp = client.post("/stt", files={"file": ("v.webm", b"x", "audio/webm")})
+        assert resp.status_code == 200
+        assert resp.json()["error"] == "Transcription timed out."

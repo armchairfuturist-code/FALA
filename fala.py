@@ -10,15 +10,15 @@ from conversation import ConversationEngine
 console = Console()
 
 try:
-    from audio import extract_speech_text, get_tts_provider_info, listen, speak
+    from audio import get_tts_provider_info, listen, speak
+    from speech_text import extract_speech_text
 
     AUDIO_AVAILABLE = True
 except ImportError:
     AUDIO_AVAILABLE = False
 
-    # ponytail: fallback duplicate of audio.extract_speech_text so the CLI can
-    # still strip the ---SAY--- marker when the openai/audio deps are missing;
-    # keep in sync with audio.py (upgrade path: extract to a dep-free module).
+    # Dep-free fallback: speech_text.py has no third-party imports, so this
+    # path only triggers when the audio stack itself is absent.
     def extract_speech_text(response: str) -> tuple[str, str | None]:  # type: ignore[misc]
         marker = "---SAY---"
         if marker in response:
