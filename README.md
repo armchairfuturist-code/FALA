@@ -123,6 +123,7 @@ Edit `.env` (copy from `.env.example` first):
 | Option | How | Quality | Cost | Offline |
 |--------|-----|---------|------|---------|
 | **Piper** (default in .env.example) | `pip install piper-tts` | Medium (dedicated pt-PT) | Free | ✅ |
+| **Kokoro** (natural local voice) | `pip install tts_eu_pt` + `FALA_TTS=kokoro` | High (eu-pt voice, 24 kHz) | Free | ✅ |
 | **Azure** (best for hosted) | Set `FALA_TTS=azure` + `FALA_AZURE_KEY` | High (dedicated pt-PT neural voices: Fernanda/Raquel/Duarte) | Free tier ~0.5M chars/mo | ❌ |
 | **OpenAI** (cloud) | Set `FALA_TTS=openai` in `.env` | Good (English-optimised) | Per-character | ❌ |
 | **None** | Ignore audio errors | — | — | ✅ |

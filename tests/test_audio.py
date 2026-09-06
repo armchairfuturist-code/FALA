@@ -755,3 +755,48 @@ class TestTTSCache:
 
         monkeypatch.setattr(audio, "TTS_CACHE_DIR", tmp_path / "cache")
         assert audio.text_to_speech("   ") is None
+
+
+class TestKokoroTTS:
+    def test_engine_cached_across_calls(self, tmp_path, monkeypatch):
+        import sys
+        import types
+        import wave
+
+        import audio
+
+        monkeypatch.setattr(audio, "_kokoro_tts", None)
+        made = []
+
+        class FakeTTS:
+            def __init__(self):
+                made.append(1)
+
+            def save(self, path, text):
+                with wave.open(path, "wb") as f:
+                    f.setnchannels(1)
+                    f.setsampwidth(2)
+                    f.setframerate(24000)
+                    f.writeframes(b"\x00\x00" * 240)
+
+        fake_mod = types.ModuleType("tts_eu_pt")
+        fake_mod.TTS = FakeTTS
+        monkeypatch.setitem(sys.modules, "tts_eu_pt", fake_mod)
+
+        for _ in range(2):
+            out = audio._kokoro_text_to_speech("olá")
+            assert out is not None and out.exists()
+            out.unlink(missing_ok=True)
+
+        assert len(made) == 1
+        monkeypatch.setattr(audio, "_kokoro_tts", None)  # don't leak cache
+
+    def test_missing_package_returns_none(self, tmp_path, monkeypatch):
+        import sys
+
+        import audio
+
+        monkeypatch.setattr(audio, "_kokoro_tts", None)
+        monkeypatch.delitem(sys.modules, "tts_eu_pt", raising=False)
+        assert audio._kokoro_text_to_speech("olá") is None
+        monkeypatch.setattr(audio, "_kokoro_tts", None)

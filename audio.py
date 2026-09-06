@@ -123,6 +123,33 @@ def _piper_text_to_speech(text: str) -> Path | None:
         return None
 
 
+_kokoro_tts = None  # cached TTS instance (model load is slow)
+
+
+def _get_kokoro_tts():
+    """Load and cache the tts_eu_pt engine (downloads ~327 MB first run)."""
+    global _kokoro_tts
+    if _kokoro_tts is None:
+        from tts_eu_pt import TTS  # type: ignore[import-not-found]
+
+        _kokoro_tts = TTS()
+    return _kokoro_tts
+
+
+def _kokoro_text_to_speech(text: str) -> Path | None:
+    """Synthesize speech with Kokoro + eu-pt voice (natural, local, free)."""
+    try:
+        tts = _get_kokoro_tts()
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp_path = Path(tmp.name)
+        tmp.close()
+        tts.save(str(tmp_path), text)
+        return tmp_path
+    except Exception as e:
+        print(f"[Kokoro TTS error: {e}]")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # OpenAI client (lazy)
 # ---------------------------------------------------------------------------
@@ -260,7 +287,7 @@ def _tts_cache_key(text: str) -> tuple[Path, str]:
     if _use_gpt4o():
         voice = os.getenv("FALA_TTS_VOICE", "alloy")
     digest = hashlib.sha1(f"{TTS_PROVIDER}|{voice}|{text}".encode("utf-8")).hexdigest()[:16]
-    suffix = ".wav" if TTS_PROVIDER == "piper" else ".mp3"
+    suffix = ".wav" if TTS_PROVIDER in ("piper", "kokoro") else ".mp3"
     return TTS_CACHE_DIR / f"{digest}{suffix}", suffix
 
 
@@ -304,6 +331,8 @@ def text_to_speech(text: str) -> Path | None:
         return cached
     if TTS_PROVIDER == "piper":
         fresh = _piper_text_to_speech(text)
+    elif TTS_PROVIDER == "kokoro":
+        fresh = _kokoro_text_to_speech(text)
     elif TTS_PROVIDER == "azure":
         fresh = _azure_text_to_speech(text)
     # ponytail: FALA_TTS/FALA_TTS_VOICE are re-read from env here because
@@ -362,6 +391,8 @@ def get_tts_provider_info() -> str:
         if PIPER_MODEL_PATH.exists():
             return "TTS: Piper (local tugão pt-PT)"
         return "TTS: Piper (not downloaded)"
+    if TTS_PROVIDER == "kokoro":
+        return "TTS: Kokoro (local eu-pt voice)"
     if TTS_PROVIDER == "azure":
         if AZURE_SPEECH_KEY:
             return f"TTS: Azure (pt-PT neural, voice: {AZURE_TTS_VOICE})"
